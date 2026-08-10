@@ -1,5 +1,3 @@
-"""Utilities for extracting numbered image frames from a video."""
-
 from pathlib import Path
 
 import cv2
@@ -20,7 +18,6 @@ def convert_to_images(
         raise ValueError("Video stride must be positive.")
 
     capture = cv2.VideoCapture(str(video_path))
-
     if not capture.isOpened():
         raise ValueError(f"Unable to open video: {video_path}")
 
@@ -30,15 +27,13 @@ def convert_to_images(
         if not ret:
             break
 
-        # A stride greater than one can reduce work for long, high-frame-rate videos.
         if current_frame % video_stride == 0:
             if not cv2.imwrite(str(output_path / f"{current_frame:05d}.jpg"), image):
                 capture.release()
-                raise OSError(f"Unable to write frame to: {output_path}")
+                raise OSError(f"Unable to write a frame to: {output_path}")
 
         current_frame += 1
 
     capture.release()
-
     if current_frame == 0:
         raise ValueError(f"Video contains no readable frames: {video_path}")

@@ -1,5 +1,3 @@
-"""Utilities for assembling numbered image frames into a video."""
-
 from pathlib import Path
 
 import cv2
@@ -7,9 +5,8 @@ from tqdm import tqdm
 
 
 def convert_to_video(images_path: Path, output_path: Path, fps: float = 30.0) -> None:
-    """Write all numbered JPG frames to a video in chronological order."""
-    # Numeric sorting avoids ordering frame 10 before frame 2.
-    filenames = sorted(images_path.glob("*.jpg"), key=lambda x: int(x.stem))
+    filenames = images_path.glob("*.jpg")
+    filenames = sorted(filenames, key=lambda x: int(x.stem))
 
     if not filenames:
         raise ValueError(f"No JPG frames found in: {images_path}")

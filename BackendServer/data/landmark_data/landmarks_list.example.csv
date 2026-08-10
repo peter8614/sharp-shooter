@@ -1,0 +1,3 @@
+file_path,classification
+data/landmark_data/landmarks/anonymous_good_001.csv,1
+data/landmark_data/landmarks/anonymous_bad_001.csv,0

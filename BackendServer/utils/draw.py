@@ -1,5 +1,3 @@
-"""Draw YOLO basketball detections and accumulated trajectories on video frames."""
-
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -11,14 +9,13 @@ from tqdm import tqdm
 
 
 def smooth_trajectory(points: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
-    """Smooth nearby trajectory fragments without bridging large detection jumps."""
+    """Smooth nearby fragments without connecting large detection jumps."""
     if not points:
         return []
     split_trajectory = [[points[0]]]
     current_split = 0
     for i in range(1, len(points)):
         distance = np.linalg.norm(np.array(points[i - 1]) - np.array(points[i]))
-        # A large jump usually means a missed frame or a different detected object.
         if distance < 15:
             split_trajectory[current_split].append(points[i])
         else:
@@ -44,7 +41,6 @@ def smooth_trajectory(points: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
 def get_pixel_coords(
     obj: Dict[str, Any], img_height: int, img_width: int
 ) -> Tuple[int, int, int, int]:
-    """Convert normalized YOLO coordinates to image pixel coordinates."""
     coords = obj["relative_coordinates"]
     center_x = int(img_width * coords["center_x"])
     center_y = int(img_height * coords["center_y"])
@@ -88,7 +84,6 @@ def draw_line_fragment(
 def draw_glowing_line(
     img: npt.NDArray[np.uint8], points: List[Tuple[int, int]], max_distance: int
 ) -> npt.NDArray[np.uint8]:
-    """Blend a soft, high-contrast trajectory line onto an image."""
     line_img = np.zeros_like(img)
     line_img = draw_line_fragment(
         line_img, points, color=(135, 0, 190), thickness=2, max_distance=max_distance
@@ -109,7 +104,6 @@ def draw_glowing_line(
 
 
 def load_labels(path: Path) -> List[Dict[str, Any]]:
-    """Parse one YOLO label file including confidence values."""
     with path.open() as label_file:
         lines = label_file.readlines()
 
@@ -139,8 +133,8 @@ def process_image(
     images_path: Path,
     ball_conf: float,
     max_distance: int,
-) -> Tuple[npt.NDArray[np.uint8], List[Tuple[int, int]]]:
-    """Draw the best basketball detection and trajectory on one source frame."""
+) -> Tuple[npt.NDArray[np.uint8], List[Tuple[int, int]], Optional[Tuple[int, int]]]:
+    """Render one frame and return its accepted ball center, if any."""
     objects = load_labels(label_filename) if label_filename and label_filename.is_file() else []
 
     image = cv2.imread(str(images_path / image_filename.name), 1)
@@ -150,9 +144,8 @@ def process_image(
 
     obj_to_draw = None
     max_conf = 0
-    # Select only the highest-confidence basketball when duplicate boxes are present.
+    new_point = None
     for obj in objects:
-        new_point = None
         if (
             obj["class_id"] == 0
             and obj["confidence"] >= ball_conf
@@ -170,12 +163,11 @@ def process_image(
         draw_circle(image, ball_x, ball_y, obj_width, obj_height)
 
     points = list(filter(lambda pt: pt is not None, points))
-    # Smoothing is only useful once enough observations are available.
     if len(points) > 30:
         points = smooth_trajectory(points)
 
     image = draw_glowing_line(image, points, max_distance)
-    return image, points
+    return image, points, new_point
 
 
 def draw_trajectory(
@@ -184,22 +176,20 @@ def draw_trajectory(
     output_path: Path,
     ball_conf: float = 0.3,
     max_distance: int = 30,
-) -> List[Tuple[int, int]]:
-    """Render every source frame and return all accepted ball center points."""
-    image_files = sorted(images_path.glob("*.jpg"), key=lambda x: int(x.stem))
-
+) -> List[Tuple[int, int, int]]:
+    """Render every source frame and retain frame indices for detected points."""
+    image_files = sorted(images_path.glob("*.jpg"), key=lambda path: int(path.stem))
     if not image_files:
         raise ValueError(f"No source frames found in: {images_path}")
 
     points = []
+    observations = []
     progress_bar = tqdm(image_files)
     for image_filename in progress_bar:
         progress_bar.set_description("Drawing trajectories")
-
-        # Missing labels are valid and still produce an output frame without a ball.
         label_filename = labels_dir / f"{image_filename.stem}.txt"
 
-        image, points = process_image(
+        image, points, new_point = process_image(
             image_filename,
             label_filename,
             points,
@@ -207,7 +197,9 @@ def draw_trajectory(
             ball_conf,
             max_distance,
         )
+        if new_point is not None:
+            observations.append((int(image_filename.stem), new_point[0], new_point[1]))
         if not cv2.imwrite(str(output_path / image_filename.name), image):
-            raise OSError(f"Unable to write frame to: {output_path}")
+            raise OSError(f"Unable to write rendered frame: {output_path}")
 
-    return points
+    return observations

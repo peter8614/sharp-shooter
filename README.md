@@ -1,247 +1,99 @@
 # Sharp Shooter
 
-Sharp Shooter is an experimental basketball shooting-form analysis pipeline. It
-combines MediaPipe pose estimation with a custom YOLOv5 basketball detector to
-extract upper-body motion, track the ball, draw its trajectory, and prepare
-video-level features for form and shot-arc classifiers.
+Sharp Shooter 是一个篮球投篮姿势分析原型。Flutter 客户端负责录制或选择视频，Flask 后端提取 MediaPipe 上肢关键点和 YOLO 篮球轨迹，随后生成姿势/轨迹分类、处理后的视频，以及可选的 NBA 参考动作和 LLM 教练建议。
 
-> **Project status:** research prototype. The video-processing pipeline works,
-> but meaningful form and arc predictions require a sufficiently large,
-> representative, and carefully labeled dataset.
+> 本项目处理视频和人体关键点，属于敏感的个人数据。部署前必须配置隐私政策、用户明确同意、数据保留期限和删除机制。
 
-## Features
+## 目录结构
 
-- Extracts shoulder, elbow, and wrist landmarks with MediaPipe Pose.
-- Supports right- and left-handed shooters.
-- Detects likely shooting and release frames from arm elevation and extension.
-- Detects basketball positions with a bundled custom YOLOv5 model.
-- Draws a continuous trajectory without dropping frames that have no detection.
-- Preserves the source video's frame rate in the rendered output.
-- Builds one fixed-size machine-learning sample per video.
-- Trains and saves Random Forest classifiers for shooting form and ball arc.
-- Includes unit tests for pose indexing, safe trajectory loading, feature
-  aggregation, and missing-detection frame handling.
+- `mobile/`：当前 Flutter 客户端。
+- `BackendServer/`：Flask API、视频分析管线和训练脚本。
+- `BackendServer/data/`：训练索引和本地训练数据（不应直接发布含个人视频的数据）。
+- `frontend/`：不连接真实 API 的静态展示页面。
+- `PRIVACY.md` 与 `SECURITY.md`：数据处理和安全报告说明。
 
-## Architecture
+## 已落实的安全与正确性措施
 
-```text
-Input video
-   |
-   +-- MediaPipe Pose --> shot-frame landmarks --> form features --> form model
-   |
-   +-- YOLOv5 detector --> ball centers --> rendered trajectory --> arc features
-                                                        |
-                                                        +--> arc model
-```
+- 服务端从 Firebase ID Token 取得 UID，不信任请求正文中的 `user_id`。
+- 上传限制为可配置的 200 MiB，并检查扩展名、清理文件名和实际视频可解码性。
+- 每个分析任务拥有独立工作目录；有界线程池避免无限创建线程。
+- 所有处理视频统一转换为 H.264 MP4，兼容 Android 和 iOS。
+- 分类器以“整段视频”为一个样本，避免同一视频的帧同时进入训练集和验证集。
+- 模型文件包含版本和特征顺序；旧版模型不会被静默加载。
+- 客户端不再绕过 TLS 证书验证，API 地址通过构建参数注入。
+- 密钥、运行产物、上传视频、模型和本地数据目录已加入 `.gitignore`。
 
-The pose and ball-detection paths run independently and write their artifacts to
-the same per-video output directory. Trained classifiers are optional: before
-model files exist, analysis still produces landmarks, trajectory data, and an
-annotated video.
+## 后端环境
 
-## Repository layout
-
-```text
-.
-|-- BackendServer/
-|   |-- main.py                         # Main analysis and dataset workflow
-|   |-- video_pipeline.py               # YOLOv5 detection and video rendering
-|   |-- landmark_classification.py      # Form feature extraction and training
-|   |-- trajectory_classification.py    # Arc feature extraction and training
-|   |-- requirements.txt
-|   |-- models/
-|   |   `-- yolov5s_basketball.pt       # Custom basketball detector
-|   |-- data/                           # Empty dataset index files
-|   |-- tests/                          # Unit tests
-|   |-- utils/                          # Frame conversion and drawing helpers
-|   `-- yolov5/                         # Bundled third-party YOLOv5 runtime
-|-- frontend/                           # Static project landing-page prototype
-|-- PRIVACY.md
-|-- SECURITY.md
-`-- README.md
-```
-
-## Requirements
-
-- Python 3.11 or 3.12
-- Windows, macOS, or Linux
-- A recent FFmpeg/OpenCV-compatible video environment
-- CPU for basic use; a CUDA-capable PyTorch installation is optional
-
-The default dependency constraints keep NumPy below version 2 because the
-supported MediaPipe release requires it.
-
-## Installation
-
-Clone the repository and create a fresh virtual environment:
-
-```bash
-git clone <your-repository-url>
-cd sharp-shooter/BackendServer
-python -m venv .venv
-```
-
-Activate it on Windows PowerShell:
+要求：Python 3.11、`ffmpeg`、可运行项目自定义 YOLOv5 模型的环境，以及 Firebase 项目。
 
 ```powershell
-.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
+cd BackendServer
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+Copy-Item .env.example .env
 ```
 
-Activate it on macOS or Linux:
+编辑 `.env`：
 
-```bash
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-```
+- `FIREBASE_STORAGE_BUCKET`：Firebase Storage bucket。
+- `FIREBASE_WEB_API_KEY`：仅用于 Firebase 邮箱登录 REST API。
+- `GOOGLE_APPLICATION_CREDENTIALS`：仓库外的服务账号 JSON 绝对路径；云环境优先使用 Application Default Credentials。
+- `OPENAI_API_KEY`、`OPENAI_MODEL` 与随机的 `SAFETY_IDENTIFIER_SALT`：仅在启用 LLM 建议时需要。LLM 请求使用不可逆用户伪标识并设置 `store=False`。
+- `MAX_UPLOAD_BYTES`、`ANALYSIS_WORKERS`、`PORT`：可选运行参数。
 
-For CUDA, install the appropriate PyTorch build for the local CUDA version before
-installing the remaining requirements.
+不要把 `.env` 或服务账号 JSON 放入仓库。此前若密钥曾进入文件或 Git 历史，应立即在相应控制台撤销/轮换；仅从当前目录删除并不能使已泄露的密钥失效。
 
-## Analyze a video
+## 重新训练模型
 
-Run the command from `BackendServer`:
+旧的 `.pkl` 模型按帧拆分数据，验证结果存在泄漏，因此新版服务会拒绝加载。还应使用修正后的 MediaPipe 索引重新生成训练关键点，再执行：
 
-```bash
-python main.py path/to/shot.mp4 --device cpu
-```
-
-Useful options:
-
-```text
---arm R|L          Shooting arm (default: R)
---device cpu|0     YOLOv5 inference device
---output PATH      Output root directory
---clean            Remove extracted and rendered intermediate frames
---form-label 0|1   Register the video as bad/good form training data
---arc-label 0|1    Register the video as bad/good arc training data
-```
-
-Example for a left-handed shooter on the first CUDA device:
-
-```bash
-python main.py path/to/left_hand_shot.mp4 --arm L --device 0 --clean
-```
-
-## Output artifacts
-
-For `shot.mp4`, the default output directory is `BackendServer/output/shot/`:
-
-```text
-landmark_data.csv       Upper-body landmarks for detected shot frames
-trajectory.txt          Accepted basketball center coordinates
-output_shot.avi         Annotated video with the ball trajectory
-labels/                 YOLO detection labels
-images_raw/             Extracted frames unless --clean is used
-images_draw/            Annotated frames unless --clean is used
-```
-
-The command also reports frame counts and optional classifier results. Until
-trained model bundles are available, `form_prediction` and `arc_prediction` are
-`None`.
-
-## Build a labeled dataset
-
-Labels use `1` for good and `0` for bad. The following command analyzes a video
-and registers its generated data in both dataset indexes:
-
-```bash
-python main.py path/to/shot.mp4 --form-label 1 --arc-label 1
-```
-
-Review every generated CSV and trajectory before accepting its label. For useful
-models, collect diverse examples across shooters, heights, camera positions,
-lighting conditions, distances, and both outcome classes. Avoid putting clips
-from the same recording session in both training and evaluation sets.
-
-No training videos or personal landmark datasets are included in this repository.
-
-## Train the classifiers
-
-Each trainer requires at least six videos, both labels, and at least two videos
-per label:
-
-```bash
+```powershell
 python landmark_classification.py
 python trajectory_classification.py
 ```
 
-Successful training writes:
+训练索引 CSV 必须包含 `file_path,classification`，可从两个 `.example.csv` 文件复制。真实索引已清理重复项和指向缺失文件的记录，但因其文件名也可能包含个人信息，已被 Git 忽略。分类标签需由可靠的篮球教练或明确规则标注；当前轨迹索引只有一个负样本，训练脚本会主动拒绝训练，必须先补充真实且经过复核的负样本。当前小数据集只适合原型验证，不能将模型输出描述为专业诊断。
 
-```text
-models/landmark_classifier.joblib
-models/trajectory_classifier.joblib
+## 启动 API
+
+```powershell
+python server.py
 ```
 
-Each model bundle stores both the estimator and its expected feature-column order.
-`main.py` automatically loads these files during future analyses.
+开发服务器仅监听 `127.0.0.1`。生产环境应使用 WSGI 服务、反向代理和有效 HTTPS 证书，并为 Firebase Storage/Firestore 配置最小权限规则。任务状态可通过带 Token 的 `GET /jobs/{job_id}` 查询。
 
-## Run tests
+## Flutter 客户端
 
-```bash
+```powershell
+cd mobile
+flutter pub get
+flutter run --dart-define=BACKEND_URL=https://your-api.example.com
+```
+
+生产构建必须传入有效 HTTPS 地址。Android 和 iOS 权限说明已配置；若不需要录音，应同时关闭相机音频采集并移除麦克风权限。
+
+## 测试
+
+```powershell
+cd BackendServer
 python -m unittest discover -s tests -v
+python -m compileall .
+
+cd ..\mobile
+flutter analyze
+flutter test
 ```
 
-The current tests are intentionally small and do not download external assets.
-Before production use, add integration tests for damaged videos, no-detection
-videos, repeated filenames, concurrent jobs, left-handed clips, and model loading.
+完整端到端测试还需要 Firebase Emulator（或隔离测试项目）、`ffmpeg`、模型权重及一组没有隐私风险的短视频夹具。
 
-## Privacy and security
+## 发布前检查
 
-This repository intentionally excludes:
+1. 轮换任何曾经写入本地项目或 Git 历史的服务账号/OpenAI 密钥。
+2. 不要提交 `uploads/`、`server_data/`、原始视频、关键点 CSV、模型或个人数据。
+3. 重新生成关键点数据并训练新版模型，记录按拍摄者/场次隔离的评估指标。
+4. 部署 HTTPS、最小权限 Firebase Rules、日志脱敏、持久化任务队列和数据删除流程。
+5. 替换客户端内存态登录信息为安全会话持久化，并实现 Token 自动刷新。
 
-- Private keys, access tokens, passwords, and `.env` files
-- Raw basketball videos and extracted frames
-- Pose-landmark training datasets
-- Personal documents, presentations, and archives
-- Virtual environments, IDE configuration, and generated outputs
-
-See [PRIVACY.md](PRIVACY.md) before collecting or sharing videos. See
-[SECURITY.md](SECURITY.md) for secret-handling and vulnerability reporting guidance.
-
-The included detector checkpoint was scanned for obvious usernames, email
-addresses, private paths, and key material before publication. Its SHA-256 digest
-is:
-
-```text
-d3f34f56ff85160b185f3995ab807ee74d8fb752c1558e1f33f3d3b24a9a16d4
-```
-
-## Known limitations
-
-- Release detection is heuristic and is not a validated biomechanical assessment.
-- Raw 2D pose estimates remain sensitive to camera angle, framing, and occlusion.
-- Ball selection uses the highest-confidence detection rather than a tracker ID.
-- Trajectory files do not yet store frame indices or timestamps.
-- The current detector does not provide reliable hoop-relative measurements.
-- The static frontend is a visual prototype and is not connected to an API.
-- AVI/DIVX output may require conversion for browser playback.
-- Processing is synchronous and can be slow on CPU.
-
-Do not use this software for medical, safety-critical, scouting, or eligibility
-decisions without independent validation.
-
-## Roadmap
-
-- Add unique run IDs and safe concurrent processing.
-- Store timestamps and confidence values with trajectory observations.
-- Add temporal ball tracking and hoop detection.
-- Normalize pose features by body scale and derive joint-angle sequences.
-- Evaluate models by shooter/session groups rather than random clips alone.
-- Add an upload API, background jobs, and a results dashboard.
-- Produce web-compatible H.264/MP4 output.
-
-## Third-party software and licensing
-
-The `BackendServer/yolov5` directory contains third-party YOLOv5 software and its
-license file. It remains subject to the license included in that directory. This
-snapshot does not assign a separate license to the project's original source code;
-choose and add one before redistributing or accepting external contributions.
-
-## Responsible use
-
-Record and analyze only people who have given informed consent. Obtain guardian
-consent where legally required for minors, minimize retention, and delete raw video
-and landmark data when it is no longer needed.
+详细的数据处理原则和漏洞报告方式分别参见 [PRIVACY.md](PRIVACY.md) 与 [SECURITY.md](SECURITY.md)。
