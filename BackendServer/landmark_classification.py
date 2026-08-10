@@ -1,159 +1,200 @@
-"""Train a video-level classifier for good and bad basketball shooting form."""
+"""Video-level shooting-form feature extraction and classification.
 
-import argparse
+Each video is represented by one feature vector. This prevents frames from the
+same recording being split across training and validation sets, which would
+otherwise make the reported accuracy unrealistically high.
+"""
+
+from __future__ import annotations
+
 from pathlib import Path
 
 import joblib
+import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 
 
-LANDMARK_COLUMNS = [
+BACKEND_DIR = Path(__file__).resolve().parent
+LANDMARK_NAMES = (
     "Left Shoulder",
     "Right Shoulder",
     "Left Elbow",
     "Right Elbow",
     "Left Wrist",
     "Right Wrist",
-]
+)
+MODEL_VERSION = 2
 
 
-def parse_landmark_data(df: pd.DataFrame, column_name: str) -> pd.DataFrame:
-    """Expand one CSV x,y,z landmark field into three numeric columns."""
-    if column_name not in df:
-        raise ValueError(f"Missing landmark column: {column_name}")
-    parsed = df[column_name].astype(str).str.split(",", expand=True)
-    if parsed.shape[1] != 3:
-        raise ValueError(f"Invalid x,y,z data in column: {column_name}")
-    parsed = parsed.apply(pd.to_numeric, errors="raise")
-    parsed.columns = [f"{column_name}_{axis}" for axis in "xyz"]
-    return parsed
+def _parse_point(value: object) -> np.ndarray:
+    """Parse a MediaPipe point stored as a comma-separated x,y,z value."""
+    parts = np.asarray(str(value).split(","), dtype=float)
+    if parts.shape != (3,) or not np.isfinite(parts).all():
+        raise ValueError(f"Invalid landmark point: {value!r}")
+    return parts
 
 
-def _summarize_landmarks(parsed: pd.DataFrame) -> pd.DataFrame:
-    """Convert a variable-length pose sequence into one fixed-size video sample."""
-    if parsed.empty:
-        raise ValueError("Landmark file contains no detected shooting frames")
-    features = {}
-    # Distribution statistics retain posture range without requiring equal clip length.
-    for column in parsed.columns:
-        series = parsed[column]
-        features[f"{column}_mean"] = series.mean()
-        features[f"{column}_std"] = series.std(ddof=0)
-        features[f"{column}_min"] = series.min()
-        features[f"{column}_max"] = series.max()
-    features["frame_count"] = len(parsed)
-    return pd.DataFrame([features])
+def _joint_angle(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
+    """Return the angle ABC in degrees, or NaN for a degenerate joint."""
+    first = a - b
+    second = c - b
+    denominator = np.linalg.norm(first) * np.linalg.norm(second)
+    if denominator <= 1e-9:
+        return float("nan")
+    cosine = np.clip(np.dot(first, second) / denominator, -1.0, 1.0)
+    return float(np.degrees(np.arccos(cosine)))
 
 
-def load_single_landmark_file(file_path: str | Path, label: int) -> pd.DataFrame:
-    """Load and summarize one labeled landmark CSV as one training row."""
-    file_path = Path(file_path)
-    if not file_path.is_file():
-        raise FileNotFoundError(f"Landmark file not found: {file_path}")
-    raw = pd.read_csv(file_path)
-    parsed = pd.concat(
-        [parse_landmark_data(raw, column) for column in LANDMARK_COLUMNS], axis=1
-    )
-    sample = _summarize_landmarks(parsed)
-    sample["Label"] = int(label)
-    return sample
+def extract_landmark_features(file_path: str | Path) -> pd.DataFrame:
+    """Convert all valid frames in one recording into one normalized row."""
+    data = pd.read_csv(file_path)
+    missing = [column for column in LANDMARK_NAMES if column not in data.columns]
+    if missing:
+        raise ValueError(f"Landmark file is missing columns: {', '.join(missing)}")
+    if data.empty:
+        raise ValueError("Landmark file does not contain any frames")
+
+    normalized_frames: list[np.ndarray] = []
+    elbow_angles: list[list[float]] = []
+    for _, row in data.iterrows():
+        points = np.vstack([_parse_point(row[name]) for name in LANDMARK_NAMES])
+        shoulder_center = (points[0] + points[1]) / 2.0
+        shoulder_width = np.linalg.norm(points[0, :2] - points[1, :2])
+        if shoulder_width <= 1e-6:
+            continue
+
+        # Centering and scaling reduce camera-position and subject-size effects.
+        normalized_frames.append(((points - shoulder_center) / shoulder_width).reshape(-1))
+        elbow_angles.append(
+            [
+                _joint_angle(points[0], points[2], points[4]),
+                _joint_angle(points[1], points[3], points[5]),
+            ]
+        )
+
+    if not normalized_frames:
+        raise ValueError("No frame has a usable shoulder scale")
+
+    frame_matrix = np.vstack(normalized_frames)
+    angle_matrix = np.asarray(elbow_angles, dtype=float)
+    feature_values: dict[str, float] = {}
+    coordinate_names = [f"{name}_{axis}" for name in LANDMARK_NAMES for axis in "xyz"]
+    for index, name in enumerate(coordinate_names):
+        values = frame_matrix[:, index]
+        feature_values.update(
+            {
+                f"{name}_mean": float(np.mean(values)),
+                f"{name}_std": float(np.std(values)),
+                f"{name}_min": float(np.min(values)),
+                f"{name}_max": float(np.max(values)),
+                f"{name}_delta": float(values[-1] - values[0]),
+            }
+        )
+
+    for index, side in enumerate(("left", "right")):
+        valid_angles = angle_matrix[:, index]
+        valid_angles = valid_angles[np.isfinite(valid_angles)]
+        if valid_angles.size == 0:
+            raise ValueError(f"No valid {side} elbow angles were found")
+        feature_values[f"{side}_elbow_angle_mean"] = float(np.mean(valid_angles))
+        feature_values[f"{side}_elbow_angle_std"] = float(np.std(valid_angles))
+        feature_values[f"{side}_elbow_angle_range"] = float(np.ptp(valid_angles))
+
+    feature_values["frame_count"] = float(len(frame_matrix))
+    return pd.DataFrame([feature_values])
 
 
-def load_multiple_landmark_files(file_label_pairs) -> pd.DataFrame:
-    """Combine multiple labeled videos into a classifier-ready table."""
-    samples = [
-        load_single_landmark_file(file_path, label)
-        for file_path, label in file_label_pairs
-    ]
-    if not samples:
-        raise ValueError("No landmark training files were provided")
-    return pd.concat(samples, ignore_index=True)
+def load_single_landmark_file(file_path: str | Path, label: int | None = None) -> pd.DataFrame:
+    """Compatibility wrapper that optionally appends a recording label."""
+    features = extract_landmark_features(file_path)
+    if label is not None:
+        features["Label"] = int(label)
+    return features
 
 
-def load_from_list(list_path: str | Path) -> pd.DataFrame:
-    """Load landmark samples referenced by a dataset index CSV."""
-    list_path = Path(list_path)
-    entries = pd.read_csv(list_path)
+def _resolve_data_path(value: str | Path, list_path: Path) -> Path:
+    """Resolve list entries against either the list directory or backend root."""
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    backend_candidate = BACKEND_DIR / path
+    return backend_candidate if backend_candidate.exists() else list_path.parent / path
+
+
+def load_training_data(list_path: str | Path) -> tuple[pd.DataFrame, pd.Series]:
+    """Load one feature row and one label for every listed video."""
+    resolved_list = Path(list_path).resolve()
+    rows = pd.read_csv(resolved_list)
     required = {"file_path", "classification"}
-    if not required.issubset(entries.columns):
-        raise ValueError(f"Dataset list must contain columns: {sorted(required)}")
-    base = list_path.parent
-    pairs = []
-    for row in entries.itertuples(index=False):
-        path = Path(row.file_path)
-        # Relative dataset paths are interpreted relative to the index file.
-        if not path.is_absolute():
-            path = base / path
-        pairs.append((path, row.classification))
-    return load_multiple_landmark_files(pairs)
+    if not required.issubset(rows.columns):
+        raise ValueError("Training list must contain file_path and classification columns")
+
+    features: list[pd.DataFrame] = []
+    labels: list[int] = []
+    for _, row in rows.iterrows():
+        features.append(extract_landmark_features(_resolve_data_path(row["file_path"], resolved_list)))
+        labels.append(int(row["classification"]))
+    return pd.concat(features, ignore_index=True), pd.Series(labels, name="Label")
 
 
 def create_model() -> RandomForestClassifier:
-    """Create a reproducible classifier with compensation for class imbalance."""
+    """Create a reproducible classifier with class-imbalance compensation."""
     return RandomForestClassifier(
-        n_estimators=300, random_state=42, class_weight="balanced"
+        n_estimators=300,
+        class_weight="balanced_subsample",
+        random_state=42,
+        n_jobs=-1,
     )
 
 
-def train_model(model, x_train, y_train):
-    """Fit and return a form classifier."""
-    model.fit(x_train, y_train)
-    return model
+def save_landmark_model(model, model_path: str | Path, feature_names: list[str]) -> None:
+    """Save the estimator together with the exact feature contract."""
+    Path(model_path).parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(
+        {"version": MODEL_VERSION, "model": model, "features": feature_names},
+        model_path,
+    )
 
 
-def landmark_predict(model, x_input):
-    """Predict form labels for summarized landmark samples."""
-    return model.predict(x_input)
+def load_landmark_model(model_path: str | Path) -> dict:
+    """Load only the current bundle format so stale models cannot be used."""
+    bundle = joblib.load(model_path)
+    if not isinstance(bundle, dict) or bundle.get("version") != MODEL_VERSION:
+        raise ValueError("Landmark model is obsolete; retrain it with this version")
+    return bundle
 
 
-def main(dataset_list: str | Path, model_output: str | Path | None = None):
-    """Train, evaluate, and optionally persist the form classifier."""
-    data = load_from_list(dataset_list)
-    if data["Label"].nunique() < 2:
-        raise ValueError("Training requires at least two form classes")
-    if len(data) < 6 or data["Label"].value_counts().min() < 2:
-        raise ValueError("Training requires at least 6 videos and 2 videos per class")
+def landmark_predict(bundle: dict, features: pd.DataFrame) -> np.ndarray:
+    """Predict after enforcing the feature order recorded during training."""
+    missing = set(bundle["features"]) - set(features.columns)
+    if missing:
+        raise ValueError(f"Prediction features are missing: {sorted(missing)}")
+    return bundle["model"].predict(features[bundle["features"]])
 
-    features = data.drop(columns=["Label"])
-    labels = data["Label"]
-    # Stratification keeps both labels represented in the small evaluation split.
-    x_train, x_test, y_train, y_test = train_test_split(
+
+def train_and_save(list_path: str | Path, model_path: str | Path) -> None:
+    """Train and evaluate using a video-level stratified holdout split."""
+    features, labels = load_training_data(list_path)
+    if labels.nunique() < 2 or labels.value_counts().min() < 2:
+        raise ValueError("At least two recordings per class are required")
+    train_x, test_x, train_y, test_y = train_test_split(
         features,
         labels,
-        test_size=0.25,
+        test_size=0.2,
         random_state=42,
         stratify=labels,
     )
-    model = train_model(create_model(), x_train, y_train)
-    predictions = landmark_predict(model, x_test)
-    print("Model Accuracy:", accuracy_score(y_test, predictions))
-    print(classification_report(y_test, predictions, zero_division=0))
-
-    if model_output:
-        model_output = Path(model_output)
-        model_output.parent.mkdir(parents=True, exist_ok=True)
-        # Store feature order with the model so inference cannot silently reorder data.
-        joblib.dump({"model": model, "features": list(features.columns)}, model_output)
-        print(f"Model written to {model_output}")
-    return model
+    model = create_model().fit(train_x, train_y)
+    predictions = model.predict(test_x)
+    print(classification_report(test_y, predictions, zero_division=0))
+    save_landmark_model(model, model_path, list(features.columns))
 
 
 if __name__ == "__main__":
-    backend_dir = Path(__file__).resolve().parent
-    parser = argparse.ArgumentParser(description="Train the shooting-form classifier.")
-    parser.add_argument(
-        "dataset_list",
-        type=Path,
-        nargs="?",
-        default=backend_dir / "data" / "landmark_data" / "landmarks_list.csv",
+    train_and_save(
+        BACKEND_DIR / "data/landmark_data/landmarks_list.csv",
+        BACKEND_DIR / "data/landmark_data/basketball_shot_model.pkl",
     )
-    parser.add_argument(
-        "--model-output",
-        type=Path,
-        default=backend_dir / "models" / "landmark_classifier.joblib",
-    )
-    args = parser.parse_args()
-    main(args.dataset_list, args.model_output)

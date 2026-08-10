@@ -1,40 +1,90 @@
-# Credentials and local configuration
-*.pem
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+**/build/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+**/android/app/debug
+**/android/app/profile
+**/android/app/release
+
+# Secrets and local configuration
 .env
 .env.*
+!.env.example
+firebase-creds.json
+*service-account*.json
+google-services.json
+GoogleService-Info.plist
+firebase_options.dart
+*.pem
 *.key
 *.p12
 *.pfx
 
-# Python
-__pycache__/
-*.py[cod]
+# Python environments and generated files
 .venv/
 venv/
-.pytest_cache/
+__pycache__/
+*.pkl
 *.joblib
-
-# IDE and OS files
-.idea/
-.vscode/
-.DS_Store
+.pytest_cache/
+.ultralytics/
 Thumbs.db
 
-# Generated analysis artifacts
-BackendServer/output/
-BackendServer/runs/
+# User videos, pose data, and generated analysis artifacts
 BackendServer/uploads/
-.ultralytics/
+BackendServer/server_data/
+BackendServer/output/
+BackendServer/shot/
 BackendServer/data/landmark_data/landmarks/
 BackendServer/data/trajectory_data/trajectories/
-
-# Large source videos and archives
-*.zip
+BackendServer/data/landmark_data/landmarks_list.csv
+BackendServer/data/trajectory_data/trajectories_list.csv
+BackendServer/NBA Players/
+BackendServer/NBA Data/
 *.mp4
 *.avi
-*.gif
 *.mov
 *.mkv
+*.gif
+
+# Personal documents and archives
+*.zip
 *.doc
 *.docx
 *.ppt

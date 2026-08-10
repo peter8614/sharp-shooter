@@ -1,25 +1,21 @@
-"""Command-line workflow for extracting and classifying basketball shot data."""
+"""Pose extraction and basketball-video analysis entry points."""
+
+from __future__ import annotations
 
 import argparse
 import csv
 import math
 import shutil
 from pathlib import Path
-from typing import Optional
 
 import cv2
-import joblib
 import mediapipe as mp
 import pandas as pd
 
-from landmark_classification import load_single_landmark_file
-from trajectory_classification import load_trajectory
 from video_pipeline import process_video
 
 
 BACKEND_DIR = Path(__file__).resolve().parent
-DEFAULT_OUTPUT = BACKEND_DIR / "output"
-# Keep the CSV schema in MediaPipe's left-to-right anatomical order.
 LANDMARK_COLUMNS = [
     "Left Shoulder",
     "Right Shoulder",
@@ -31,10 +27,7 @@ LANDMARK_COLUMNS = [
 
 
 def _joint_angle(shoulder, elbow, wrist) -> float:
-    """Return the shoulder-elbow-wrist angle in radians.
-
-    The vectors start at the elbow, so a fully extended arm is close to pi radians.
-    """
+    """Return the shoulder-elbow-wrist angle in radians."""
     upper = (shoulder.x - elbow.x, shoulder.y - elbow.y)
     lower = (wrist.x - elbow.x, wrist.y - elbow.y)
     upper_length = math.hypot(*upper)
@@ -44,21 +37,17 @@ def _joint_angle(shoulder, elbow, wrist) -> float:
     cosine = (upper[0] * lower[0] + upper[1] * lower[1]) / (
         upper_length * lower_length
     )
-    # Floating-point rounding can otherwise put the cosine just outside acos' domain.
+    # Floating-point rounding can otherwise move the value outside acos' domain.
     return math.acos(max(-1.0, min(1.0, cosine)))
 
 
 def detect_shooting_motion(
     pose_landmarks,
     shooting_arm: str,
-    previous_arm_angle: Optional[float],
+    previous_arm_angle: float | None,
     threshold: float = 0.1,
 ):
-    """Detect an elevated, extending shooting arm in one pose frame.
-
-    Returns whether the arm is moving through a shot, the current elbow angle, and
-    whether the arm has crossed the configured release posture.
-    """
+    """Detect a raised and extending shooting arm in one pose frame."""
     if not pose_landmarks:
         return False, previous_arm_angle, False
 
@@ -66,87 +55,70 @@ def detect_shooting_motion(
     if arm not in {"R", "L"}:
         raise ValueError("shooting_arm must be 'R' or 'L'")
 
-    # MediaPipe Pose: shoulders 11/12, elbows 13/14, wrists 15/16.
-    shoulder_idx, elbow_idx, wrist_idx = (12, 14, 16) if arm == "R" else (11, 13, 15)
-    landmarks = pose_landmarks.landmark
-    shoulder, elbow, wrist = (
-        landmarks[shoulder_idx],
-        landmarks[elbow_idx],
-        landmarks[wrist_idx],
+    # MediaPipe Pose uses 11/12 for shoulders, 13/14 for elbows, and 15/16 for wrists.
+    shoulder_index, elbow_index, wrist_index = (
+        (12, 14, 16) if arm == "R" else (11, 13, 15)
     )
-
+    landmarks = pose_landmarks.landmark
+    shoulder = landmarks[shoulder_index]
+    elbow = landmarks[elbow_index]
+    wrist = landmarks[wrist_index]
     if min(shoulder.visibility, elbow.visibility, wrist.visibility) < 0.5:
         return False, previous_arm_angle, False
 
-    arm_angle = _joint_angle(shoulder, elbow, wrist)
-    # MediaPipe's normalized y coordinate increases toward the bottom of the image.
+    angle = _joint_angle(shoulder, elbow, wrist)
+    # Normalized image y grows downward, so a smaller wrist y means a raised wrist.
     wrist_is_raised = wrist.y < shoulder.y
-    angle_change = (
-        abs(arm_angle - previous_arm_angle) if previous_arm_angle is not None else 0.0
-    )
-    is_shooting = wrist_is_raised and angle_change >= threshold
-    # A release is approximated by a raised arm extending beyond 150 degrees.
+    change = abs(angle - previous_arm_angle) if previous_arm_angle is not None else 0.0
+    is_shooting = wrist_is_raised and change >= threshold
     is_released = (
         wrist_is_raised
         and previous_arm_angle is not None
-        and arm_angle >= math.radians(150)
-        and arm_angle > previous_arm_angle
+        and angle >= math.radians(150)
+        and angle > previous_arm_angle
     )
-    return is_shooting, arm_angle, is_released
+    return is_shooting, angle, is_released
 
 
-def save_landmark_data(csv_writer, frame_idx: int, pose_landmarks) -> None:
-    """Write the upper-body landmarks for one detected shot frame to CSV."""
-    if not pose_landmarks:
-        return
-    landmarks = [pose_landmarks.landmark[index] for index in (11, 12, 13, 14, 15, 16)]
+def save_landmark_data(csv_writer, frame_index: int, pose_landmarks) -> None:
+    """Write correctly indexed upper-body landmarks for one frame."""
+    points = [pose_landmarks.landmark[index] for index in (11, 12, 13, 14, 15, 16)]
     csv_writer.writerow(
-        [frame_idx] + [f"{lm.x:.8f},{lm.y:.8f},{lm.z:.8f}" for lm in landmarks]
+        [frame_index] + [f"{point.x:.8f},{point.y:.8f},{point.z:.8f}" for point in points]
     )
 
 
-def extract_landmarks(
-    video_path: Path,
-    csv_path: Path,
-    shooting_arm: str = "R",
-) -> dict:
-    """Extract visible shooting-motion landmarks from a video.
-
-    Only frames that are part of a likely shooting motion are stored. This prevents
-    unrelated movement before and after the shot from dominating classifier input.
-    """
+def extract_landmarks(video_path: Path, csv_path: Path, shooting_arm: str = "R") -> dict:
+    """Extract likely shot frames into a per-video CSV file."""
     capture = cv2.VideoCapture(str(video_path))
     if not capture.isOpened():
         raise ValueError(f"Unable to open video: {video_path}")
 
     csv_path.parent.mkdir(parents=True, exist_ok=True)
-    previous_angle: Optional[float] = None
-    frame_count = shot_frame_count = release_count = 0
+    previous_angle = None
+    frame_count = shot_frame_count = release_frame_count = 0
 
-    # A separate Pose instance per video prevents tracking state leaking between clips.
-    pose_module = mp.solutions.pose
-    with pose_module.Pose(static_image_mode=False) as pose, csv_path.open(
+    # A fresh Pose instance prevents tracking state from leaking across jobs.
+    with mp.solutions.pose.Pose(static_image_mode=False) as pose, csv_path.open(
         "w", newline="", encoding="utf-8"
     ) as csv_file:
         writer = csv.writer(csv_file)
         writer.writerow(["Frame", *LANDMARK_COLUMNS])
-
         try:
             while capture.isOpened():
                 success, frame = capture.read()
                 if not success:
                     break
-                # OpenCV supplies BGR pixels while MediaPipe expects RGB pixels.
                 result = pose.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
                 if result.pose_landmarks:
-                    is_shooting, previous_angle, is_released = detect_shooting_motion(
+                    shooting, previous_angle, released = detect_shooting_motion(
                         result.pose_landmarks, shooting_arm, previous_angle
                     )
-                    if is_shooting or is_released:
+                    if shooting or released:
                         save_landmark_data(writer, frame_count, result.pose_landmarks)
                         shot_frame_count += 1
-                    if is_released:
-                        release_count += 1
+                    if released:
+                        release_frame_count += 1
                 frame_count += 1
         finally:
             capture.release()
@@ -154,56 +126,66 @@ def extract_landmarks(
     return {
         "frames": frame_count,
         "shot_frames": shot_frame_count,
-        "release_frames": release_count,
+        "release_frames": release_frame_count,
         "landmarks": csv_path,
     }
 
 
-def _append_dataset_entry(list_path: Path, file_path: Path, classification: int) -> None:
-    """Add or update one labeled file in a dataset index."""
-    list_path.parent.mkdir(parents=True, exist_ok=True)
-    if list_path.exists():
-        entries = pd.read_csv(list_path)
-    else:
-        entries = pd.DataFrame(columns=["file_path", "classification"])
-    entry = pd.DataFrame(
-        [{"file_path": str(file_path.resolve()), "classification": int(classification)}]
+def break_down_video(
+    video_path,
+    landmark_dir,
+    trajectory_dir,
+    shooting_arm="R",
+    device="cpu",
+    clean=True,
+):
+    """Generate isolated landmark, trajectory, and annotated-video artifacts."""
+    video_path = Path(video_path).expanduser().resolve()
+    landmark_dir = Path(landmark_dir).expanduser().resolve()
+    trajectory_dir = Path(trajectory_dir).expanduser().resolve()
+    if not video_path.is_file():
+        raise FileNotFoundError(f"Video not found: {video_path}")
+
+    pose_result = extract_landmarks(
+        video_path,
+        landmark_dir / "landmark_data.csv",
+        shooting_arm,
     )
-    # Re-labeling a video updates its existing row instead of creating duplicates.
-    entries = pd.concat([entries, entry], ignore_index=True).drop_duplicates(
+    run_path = process_video(
+        video_path,
+        trajectory_dir,
+        device=device,
+        clean=clean,
+    )
+    return {
+        **pose_result,
+        "run_path": run_path,
+        "trajectory": run_path / "trajectory.txt",
+        "annotated_video": run_path / f"output_{video_path.stem}.avi",
+    }
+
+
+def _append_dataset_entry(index_path: Path, data_path: Path, classification: int) -> None:
+    """Add one labeled artifact to a portable dataset index."""
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    entries = (
+        pd.read_csv(index_path)
+        if index_path.exists()
+        else pd.DataFrame(columns=["file_path", "classification"])
+    )
+    relative_path = data_path.resolve().relative_to(BACKEND_DIR)
+    new_entry = pd.DataFrame(
+        [{"file_path": relative_path.as_posix(), "classification": int(classification)}]
+    )
+    entries = pd.concat([entries, new_entry], ignore_index=True).drop_duplicates(
         subset=["file_path"], keep="last"
     )
-    entries.to_csv(list_path, index=False)
+    entries.to_csv(index_path, index=False)
 
 
-def organize_trajectory_data(
-    file_name: str,
-    classification: int,
-    source_path: Path,
-) -> Path:
-    """Copy a generated trajectory into the labeled trajectory dataset."""
-    destination = (
-        BACKEND_DIR / "data" / "trajectory_data" / "trajectories" / f"{file_name}_trajectories.txt"
-    )
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source_path, destination)
-    _append_dataset_entry(
-        BACKEND_DIR / "data" / "trajectory_data" / "trajectories_list.csv",
-        destination,
-        classification,
-    )
-    return destination
-
-
-def organize_landmark_data(
-    file_name: str,
-    classification: int,
-    source_path: Path,
-) -> Path:
-    """Copy generated pose landmarks into the labeled form dataset."""
-    destination = (
-        BACKEND_DIR / "data" / "landmark_data" / "landmarks" / f"{file_name}_landmarks.csv"
-    )
+def organize_landmark_data(file_name, classification, source_path):
+    """Copy one generated landmark CSV into the labeled form dataset."""
+    destination = BACKEND_DIR / "data" / "landmark_data" / "landmarks" / f"{file_name}_landmarks.csv"
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source_path, destination)
     _append_dataset_entry(
@@ -214,109 +196,34 @@ def organize_landmark_data(
     return destination
 
 
-def _predict_from_bundle(model_path: Path, sample: pd.DataFrame) -> Optional[dict]:
-    """Run a saved classifier bundle, or return None when it has not been trained."""
-    if not model_path.is_file():
-        return None
-    bundle = joblib.load(model_path)
-    if not isinstance(bundle, dict) or not {"model", "features"}.issubset(bundle):
-        raise ValueError(f"Invalid classifier bundle: {model_path}")
-    # Reapply the training column order before passing data to scikit-learn.
-    features = sample.drop(columns=["Label"], errors="ignore").reindex(
-        columns=bundle["features"]
+def organize_trajectory_data(file_name, classification, source_path):
+    """Copy one generated trajectory into the labeled arc dataset."""
+    destination = BACKEND_DIR / "data" / "trajectory_data" / "trajectories" / f"{file_name}_trajectories.txt"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_path, destination)
+    _append_dataset_entry(
+        BACKEND_DIR / "data" / "trajectory_data" / "trajectories_list.csv",
+        destination,
+        classification,
     )
-    if features.isnull().any().any():
-        raise ValueError(f"Classifier feature mismatch: {model_path}")
-    model = bundle["model"]
-    label = int(model.predict(features)[0])
-    confidence = None
-    if hasattr(model, "predict_proba"):
-        probabilities = model.predict_proba(features)[0]
-        confidence = float(max(probabilities))
-    return {"label": label, "confidence": confidence}
-
-
-def analyze_video(
-    video_path: Path,
-    output_root: Path = DEFAULT_OUTPUT,
-    shooting_arm: str = "R",
-    device: str = "cpu",
-    clean: bool = False,
-) -> dict:
-    """Run pose extraction, ball tracking, and any available classifiers."""
-    video_path = Path(video_path).expanduser().resolve()
-    output_root = Path(output_root).expanduser().resolve()
-    if not video_path.is_file():
-        raise FileNotFoundError(f"Video not found: {video_path}")
-
-    run_path = output_root / video_path.stem
-    pose_result = extract_landmarks(
-        video_path, run_path / "landmark_data.csv", shooting_arm
-    )
-    process_video(video_path, output_root, device=device, clean=clean)
-    form_model_path = BACKEND_DIR / "models" / "landmark_classifier.joblib"
-    arc_model_path = BACKEND_DIR / "models" / "trajectory_classifier.joblib"
-    form_prediction = None
-    arc_prediction = None
-    # Classifiers are optional until the user has collected enough labeled videos.
-    if form_model_path.is_file():
-        form_prediction = _predict_from_bundle(
-            form_model_path,
-            load_single_landmark_file(run_path / "landmark_data.csv", 0),
-        )
-    if arc_model_path.is_file():
-        arc_prediction = _predict_from_bundle(
-            arc_model_path, load_trajectory(run_path / "trajectory.txt", 0)
-        )
-    return {
-        **pose_result,
-        "output_dir": run_path,
-        "trajectory": run_path / "trajectory.txt",
-        "annotated_video": run_path / f"output_{video_path.stem}.avi",
-        "form_prediction": form_prediction,
-        "arc_prediction": arc_prediction,
-    }
-
-
-def main(
-    video_path: str | Path,
-    form_classification: Optional[int] = None,
-    arc_classification: Optional[int] = None,
-    **kwargs,
-) -> dict:
-    """Analyze one video and optionally register it as labeled training data."""
-    result = analyze_video(Path(video_path), **kwargs)
-    video_name = Path(video_path).stem
-    if form_classification is not None:
-        organize_landmark_data(
-            video_name, form_classification, Path(result["landmarks"])
-        )
-    if arc_classification is not None:
-        organize_trajectory_data(
-            video_name, arc_classification, Path(result["trajectory"])
-        )
-    return result
+    return destination
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Analyze a basketball shooting video.")
+    parser = argparse.ArgumentParser(description="Analyze one basketball shot video")
     parser.add_argument("video", type=Path)
-    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--output", type=Path, default=BACKEND_DIR / "output")
     parser.add_argument("--arm", choices=["R", "L"], default="R")
     parser.add_argument("--device", default="cpu")
-    parser.add_argument("--form-label", type=int, choices=[0, 1])
-    parser.add_argument("--arc-label", type=int, choices=[0, 1])
     parser.add_argument("--clean", action="store_true")
-    args = parser.parse_args()
-
-    analysis = main(
-        args.video,
-        form_classification=args.form_label,
-        arc_classification=args.arc_label,
-        output_root=args.output,
-        shooting_arm=args.arm,
-        device=args.device,
-        clean=args.clean,
+    arguments = parser.parse_args()
+    print(
+        break_down_video(
+            arguments.video,
+            arguments.output / arguments.video.stem,
+            arguments.output,
+            arguments.arm,
+            arguments.device,
+            arguments.clean,
+        )
     )
-    for key, value in analysis.items():
-        print(f"{key}: {value}")

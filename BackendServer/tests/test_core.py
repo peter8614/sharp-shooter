@@ -57,8 +57,14 @@ class CoreTests(unittest.TestCase):
             with path.open("w", newline="", encoding="utf-8") as handle:
                 writer = csv.writer(handle)
                 writer.writerow(columns)
-                writer.writerow([0, *(["0.1,0.2,0.3"] * 6)])
-                writer.writerow([1, *(["0.2,0.3,0.4"] * 6)])
+                # Distinct shoulders provide the body scale required by the
+                # normalized video-level feature extractor.
+                writer.writerow(
+                    [0, "0,0,0", "2,0,0", "0,1,0", "2,1,0", "0,2,0", "2,2,0"]
+                )
+                writer.writerow(
+                    [1, "0,0,0", "2,0,0", "0,1.2,0", "2,1.2,0", "0,2.2,0", "2,2.2,0"]
+                )
             sample = landmark_classification.load_single_landmark_file(path, 0)
             self.assertEqual(len(sample), 1)
             self.assertEqual(sample.loc[0, "frame_count"], 2)

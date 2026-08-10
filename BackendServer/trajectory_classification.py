@@ -1,143 +1,156 @@
-"""Train a video-level classifier for good and bad basketball shot arcs."""
+"""Video-level basketball trajectory feature extraction and classification."""
 
-import argparse
+from __future__ import annotations
+
 from pathlib import Path
 
 import joblib
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 
 
-RESAMPLED_POINTS = 25
+BACKEND_DIR = Path(__file__).resolve().parent
+MODEL_VERSION = 2
+SAMPLE_COUNT = 25
 
 
-def _resample_trajectory(points: np.ndarray, count: int = RESAMPLED_POINTS) -> np.ndarray:
-    """Normalize and interpolate a trajectory to a fixed number of points."""
-    if len(points) < 2:
-        raise ValueError("A trajectory requires at least two detected ball positions")
+def _read_trajectory(file_path: str | Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Read legacy x/y rows and current frame/x/y rows safely."""
+    rows: list[list[float]] = []
+    for line in Path(file_path).read_text(encoding="utf-8").splitlines():
+        try:
+            values = [float(value) for value in line.split()]
+        except ValueError:
+            # Header rows are intentionally skipped.
+            continue
+        if len(values) in (2, 3) and np.isfinite(values).all():
+            rows.append(values)
+    if len(rows) < 3:
+        raise ValueError("Trajectory must contain at least three valid observations")
 
-    # Translation and scale normalization makes videos at different resolutions comparable.
-    normalized = points.astype(float) - points[0]
-    scale = np.ptp(normalized, axis=0)
-    scale[scale == 0] = 1.0
-    normalized /= scale
+    matrix = np.asarray(rows, dtype=float)
+    if matrix.shape[1] == 2:
+        frames = np.arange(len(matrix), dtype=float)
+        x_values, y_values = matrix[:, 0], matrix[:, 1]
+    else:
+        frames, x_values, y_values = matrix[:, 0], matrix[:, 1], matrix[:, 2]
 
-    # Interpolation makes clips with different durations comparable to one model.
-    source = np.linspace(0.0, 1.0, len(normalized))
-    target = np.linspace(0.0, 1.0, count)
-    x = np.interp(target, source, normalized[:, 0])
-    y = np.interp(target, source, normalized[:, 1])
-    return np.column_stack((x, y))
+    order = np.argsort(frames)
+    frames, x_values, y_values = frames[order], x_values[order], y_values[order]
+    unique_frames, unique_indices = np.unique(frames, return_index=True)
+    return unique_frames, x_values[unique_indices], y_values[unique_indices]
 
 
-def load_trajectory(file_path: str | Path, label: int) -> pd.DataFrame:
-    """Load one trajectory without modifying it and return one training row."""
-    file_path = Path(file_path)
-    if not file_path.is_file():
-        raise FileNotFoundError(f"Trajectory file not found: {file_path}")
-    try:
-        points = np.loadtxt(file_path, dtype=float, ndmin=2)
-    except ValueError as exc:
-        raise ValueError(f"Invalid trajectory file: {file_path}") from exc
-    if points.shape[1] != 2:
-        raise ValueError(f"Trajectory must contain exactly two columns: {file_path}")
+def extract_trajectory_features(file_path: str | Path) -> pd.DataFrame:
+    """Normalize and time-interpolate one complete shot into one feature row."""
+    frames, x_values, y_values = _read_trajectory(file_path)
+    duration = frames[-1] - frames[0]
+    if duration <= 0:
+        raise ValueError("Trajectory frame indices must span a positive duration")
 
-    sampled = _resample_trajectory(points)
-    features = {}
-    # Flatten the ordered points into stable x_00, y_00, ... feature columns.
-    for index, (x, y) in enumerate(sampled):
-        features[f"x_{index:02d}"] = x
-        features[f"y_{index:02d}"] = y
-    features["original_point_count"] = len(points)
-    features["Label"] = int(label)
+    # One shared scale preserves the curve's aspect ratio while removing pixels.
+    centered_x = x_values - x_values[0]
+    centered_y = y_values - y_values[0]
+    scale = max(float(np.ptp(centered_x)), float(np.ptp(centered_y)), 1.0)
+    normalized_time = (frames - frames[0]) / duration
+    sample_time = np.linspace(0.0, 1.0, SAMPLE_COUNT)
+    sampled_x = np.interp(sample_time, normalized_time, centered_x / scale)
+    sampled_y = np.interp(sample_time, normalized_time, centered_y / scale)
+
+    features: dict[str, float] = {}
+    for index, (x_value, y_value) in enumerate(zip(sampled_x, sampled_y)):
+        features[f"x_{index:02d}"] = float(x_value)
+        features[f"y_{index:02d}"] = float(y_value)
+    features["duration_frames"] = float(duration)
+    features["observation_count"] = float(len(frames))
+    features["horizontal_direction"] = float(np.sign(centered_x[-1]))
     return pd.DataFrame([features])
 
 
-def load_from_list(trajectories_list_csv: str | Path) -> pd.DataFrame:
-    """Load trajectory samples referenced by a dataset index CSV."""
-    list_path = Path(trajectories_list_csv)
-    entries = pd.read_csv(list_path)
-    required = {"file_path", "classification"}
-    if not required.issubset(entries.columns):
-        raise ValueError(f"Dataset list must contain columns: {sorted(required)}")
+def load_trajectory(file_path: str | Path, label: int | None = None) -> pd.DataFrame:
+    """Compatibility wrapper that optionally appends a recording label."""
+    features = extract_trajectory_features(file_path)
+    if label is not None:
+        features["Label"] = int(label)
+    return features
 
-    samples = []
-    for row in entries.itertuples(index=False):
-        path = Path(row.file_path)
-        if not path.is_absolute():
-            path = list_path.parent / path
-        samples.append(load_trajectory(path, row.classification))
-    if not samples:
-        raise ValueError("No trajectory training files were provided")
-    return pd.concat(samples, ignore_index=True)
+
+def _resolve_data_path(value: str | Path, list_path: Path) -> Path:
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    backend_candidate = BACKEND_DIR / path
+    return backend_candidate if backend_candidate.exists() else list_path.parent / path
+
+
+def load_training_data(list_path: str | Path) -> tuple[pd.DataFrame, pd.Series]:
+    """Load one feature row and one label for every listed recording."""
+    resolved_list = Path(list_path).resolve()
+    rows = pd.read_csv(resolved_list)
+    if not {"file_path", "classification"}.issubset(rows.columns):
+        raise ValueError("Training list must contain file_path and classification columns")
+    features = [
+        extract_trajectory_features(_resolve_data_path(row["file_path"], resolved_list))
+        for _, row in rows.iterrows()
+    ]
+    labels = pd.Series(rows["classification"].astype(int).to_list(), name="Label")
+    return pd.concat(features, ignore_index=True), labels
 
 
 def create_model() -> RandomForestClassifier:
-    """Create a reproducible arc classifier with balanced class weights."""
     return RandomForestClassifier(
-        n_estimators=300, random_state=42, class_weight="balanced"
+        n_estimators=300,
+        class_weight="balanced_subsample",
+        random_state=42,
+        n_jobs=-1,
     )
 
 
-def train_model(model, x_train, y_train):
-    """Fit and return a trajectory classifier."""
-    model.fit(x_train, y_train)
-    return model
+def save_trajectory_model(model, model_path: str | Path, feature_names: list[str]) -> None:
+    """Save the model and its feature schema as one versioned bundle."""
+    Path(model_path).parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(
+        {"version": MODEL_VERSION, "model": model, "features": feature_names},
+        model_path,
+    )
 
 
-def trajectory_predict(model, x_input):
-    """Predict arc labels for normalized trajectory samples."""
-    return model.predict(x_input)
+def load_trajectory_model(model_path: str | Path) -> dict:
+    bundle = joblib.load(model_path)
+    if not isinstance(bundle, dict) or bundle.get("version") != MODEL_VERSION:
+        raise ValueError("Trajectory model is obsolete; retrain it with this version")
+    return bundle
 
 
-def main(dataset_list: str | Path, model_output: str | Path | None = None):
-    """Train, evaluate, and optionally persist the trajectory classifier."""
-    data = load_from_list(dataset_list)
-    if data["Label"].nunique() < 2:
-        raise ValueError("Training requires at least two trajectory classes")
-    if len(data) < 6 or data["Label"].value_counts().min() < 2:
-        raise ValueError("Training requires at least 6 videos and 2 videos per class")
+def trajectory_predict(bundle: dict, features: pd.DataFrame) -> np.ndarray:
+    missing = set(bundle["features"]) - set(features.columns)
+    if missing:
+        raise ValueError(f"Prediction features are missing: {sorted(missing)}")
+    return bundle["model"].predict(features[bundle["features"]])
 
-    features = data.drop(columns=["Label"])
-    labels = data["Label"]
-    # Stratification keeps both labels represented in the evaluation split.
-    x_train, x_test, y_train, y_test = train_test_split(
+
+def train_and_save(list_path: str | Path, model_path: str | Path) -> None:
+    """Train and evaluate without allowing observations from one video to leak."""
+    features, labels = load_training_data(list_path)
+    if labels.nunique() < 2 or labels.value_counts().min() < 2:
+        raise ValueError("At least two recordings per class are required")
+    train_x, test_x, train_y, test_y = train_test_split(
         features,
         labels,
-        test_size=0.25,
+        test_size=0.2,
         random_state=42,
         stratify=labels,
     )
-    model = train_model(create_model(), x_train, y_train)
-    predictions = trajectory_predict(model, x_test)
-    print("Model Accuracy:", accuracy_score(y_test, predictions))
-    print(classification_report(y_test, predictions, zero_division=0))
-
-    if model_output:
-        model_output = Path(model_output)
-        model_output.parent.mkdir(parents=True, exist_ok=True)
-        # Persist the feature schema with the estimator for safe inference later.
-        joblib.dump({"model": model, "features": list(features.columns)}, model_output)
-        print(f"Model written to {model_output}")
-    return model
+    model = create_model().fit(train_x, train_y)
+    print(classification_report(test_y, model.predict(test_x), zero_division=0))
+    save_trajectory_model(model, model_path, list(features.columns))
 
 
 if __name__ == "__main__":
-    backend_dir = Path(__file__).resolve().parent
-    parser = argparse.ArgumentParser(description="Train the ball-trajectory classifier.")
-    parser.add_argument(
-        "dataset_list",
-        type=Path,
-        nargs="?",
-        default=backend_dir / "data" / "trajectory_data" / "trajectories_list.csv",
+    train_and_save(
+        BACKEND_DIR / "data/trajectory_data/trajectories_list.csv",
+        BACKEND_DIR / "data/trajectory_data/trajectory_model.pkl",
     )
-    parser.add_argument(
-        "--model-output",
-        type=Path,
-        default=backend_dir / "models" / "trajectory_classifier.joblib",
-    )
-    args = parser.parse_args()
-    main(args.dataset_list, args.model_output)
