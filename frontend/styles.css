@@ -1,0 +1,66 @@
+:root {
+    --purple: #5e2b97;
+    --orange: #f97316;
+    --white: #ffffff;
+}
+
+body {
+    margin: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--white);
+    color: var(--purple);
+}
+
+header {
+    background-color: var(--purple);
+    color: var(--white);
+    padding: 20px;
+    text-align: center;
+}
+
+nav {
+    background-color: var(--orange);
+    text-align: center;
+    padding: 10px 0;
+}
+
+nav a {
+    color: var(--white);
+    text-decoration: none;
+    margin: 0 15px;
+    font-weight: bold;
+}
+
+section {
+    padding: 40px 20px;
+    text-align: center;
+}
+
+.intro {
+    background-color: #f4f4f4;
+}
+
+.cta-button {
+    background-color: var(--purple);
+    color: var(--white);
+    padding: 12px 24px;
+    border: none;
+    border-radius: 5px;
+    font-size: 1rem;
+    cursor: pointer;
+    margin-top: 20px;
+}
+
+footer {
+    background-color: var(--orange);
+    color: var(--white);
+    text-align: center;
+    padding: 15px;
+}
+
+@media (max-width: 600px) {
+    nav a {
+        display: block;
+        margin: 10px 0;
+    }
+}

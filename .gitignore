@@ -1,0 +1,43 @@
+# Credentials and local configuration
+*.pem
+.env
+.env.*
+*.key
+*.p12
+*.pfx
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.joblib
+
+# IDE and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Generated analysis artifacts
+BackendServer/output/
+BackendServer/runs/
+BackendServer/uploads/
+.ultralytics/
+BackendServer/data/landmark_data/landmarks/
+BackendServer/data/trajectory_data/trajectories/
+
+# Large source videos and archives
+*.zip
+*.mp4
+*.avi
+*.gif
+*.mov
+*.mkv
+*.doc
+*.docx
+*.ppt
+*.pptx
+*.xls
+*.xlsx
