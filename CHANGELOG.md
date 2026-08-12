@@ -37,6 +37,15 @@
   build. Static analysis still reports maintainability lints that will be
   addressed separately.
 
+### Continuous integration
+
+- Added a secret-free GitHub Actions workflow for pull requests and `main`.
+- Added backend unit tests and Python bytecode compilation on Python 3.11.
+- Added Flutter dependency resolution, tests, static analysis, and a JDK 17
+  Android debug APK build using Flutter 3.44.9.
+- Kept current warning/info lint debt visible but non-blocking; analyzer errors,
+  test failures, and build failures remain blocking.
+
 ### Interpretation limits
 
 - The trajectory result may be optimistic because the added negative examples

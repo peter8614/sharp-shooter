@@ -1,5 +1,7 @@
 # Sharp Shooter
 
+[![CI](https://github.com/peter8614/sharp-shooter/actions/workflows/ci.yml/badge.svg)](https://github.com/peter8614/sharp-shooter/actions/workflows/ci.yml)
+
 Sharp Shooter 是一个篮球投篮姿势分析原型。Flutter 客户端负责录制或选择视频，Flask 后端提取 MediaPipe 上肢关键点和 YOLO 篮球轨迹，随后生成姿势/轨迹分类、处理后的视频，以及可选的 NBA 参考动作和 LLM 教练建议。
 
 > 本项目处理视频和人体关键点，属于敏感的个人数据。部署前必须配置隐私政策、用户明确同意、数据保留期限和删除机制。
@@ -100,6 +102,8 @@ flutter test
 ```
 
 完整端到端测试还需要 Firebase Emulator（或隔离测试项目）、`ffmpeg`、模型权重及一组没有隐私风险的短视频夹具。
+
+GitHub Actions 会在向 `main` 推送或提交 Pull Request 时自动执行后端测试、Python 编译检查、Flutter 测试、Dart 静态分析和 Android Debug APK 构建。当前静态分析中的 warning 与 info 会显示在日志中但暂不阻断 CI；真正的分析 error、测试失败或构建失败仍会使检查失败。
 
 ## 发布前检查
 
