@@ -15,8 +15,7 @@ from utils import convert_to_images, convert_to_video, draw_trajectory
 
 
 BACKEND_DIR = Path(__file__).resolve().parent
-# The public release keeps the vetted third-party runtime in ``yolov5``.
-YOLO_DETECT = BACKEND_DIR / "yolov5" / "detect.py"
+YOLO_DETECT = BACKEND_DIR / "yolov5_custom" / "detect.py"
 DEFAULT_WEIGHTS = BACKEND_DIR / "models" / "yolov5s_basketball.pt"
 
 
@@ -75,7 +74,14 @@ def process_video(
         device,
     ]
     environment = os.environ.copy()
-    environment["YOLO_CONFIG_DIR"] = str(output_root / ".ultralytics")
+    # Ultralytics checks that its configuration parent exists before startup.
+    yolo_config_dir = output_root / ".ultralytics"
+    yolo_config_dir.mkdir(parents=True, exist_ok=True)
+    environment["YOLO_CONFIG_DIR"] = str(yolo_config_dir)
+    # Keep Matplotlib's generated font cache beside the other run artifacts.
+    matplotlib_config_dir = output_root / ".matplotlib"
+    matplotlib_config_dir.mkdir(parents=True, exist_ok=True)
+    environment["MPLCONFIGDIR"] = str(matplotlib_config_dir)
     subprocess.run(command, check=True, cwd=BACKEND_DIR, env=environment)
 
     trajectory = draw_trajectory(

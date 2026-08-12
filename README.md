@@ -1,5 +1,7 @@
 # Sharp Shooter
 
+[![CI](https://github.com/peter8614/sharp-shooter/actions/workflows/ci.yml/badge.svg)](https://github.com/peter8614/sharp-shooter/actions/workflows/ci.yml)
+
 Sharp Shooter 是一个篮球投篮姿势分析原型。Flutter 客户端负责录制或选择视频，Flask 后端提取 MediaPipe 上肢关键点和 YOLO 篮球轨迹，随后生成姿势/轨迹分类、处理后的视频，以及可选的 NBA 参考动作和 LLM 教练建议。
 
 > 本项目处理视频和人体关键点，属于敏感的个人数据。部署前必须配置隐私政策、用户明确同意、数据保留期限和删除机制。
@@ -54,7 +56,20 @@ python landmark_classification.py
 python trajectory_classification.py
 ```
 
-训练索引 CSV 必须包含 `file_path,classification`，可从两个 `.example.csv` 文件复制。真实索引已清理重复项和指向缺失文件的记录，但因其文件名也可能包含个人信息，已被 Git 忽略。分类标签需由可靠的篮球教练或明确规则标注；当前轨迹索引只有一个负样本，训练脚本会主动拒绝训练，必须先补充真实且经过复核的负样本。当前小数据集只适合原型验证，不能将模型输出描述为专业诊断。
+训练索引 CSV 必须包含 `file_path,classification`，可从两个 `.example.csv` 文件复制。真实索引已清理重复项和指向缺失文件的记录，但因其文件名也可能包含个人信息，已被 Git 忽略。分类标签需由可靠的篮球教练或明确规则标注。当前小数据集只适合原型验证，不能将模型输出描述为专业诊断。
+
+### 2026-08-13 训练结果
+
+![Sharp Shooter 模型训练结果](docs/training-results-1024.png)
+
+本轮训练使用 5 折、10 次重复分层交叉验证：
+
+- 姿势模型：36 段样本（29 正、7 负），准确率 `81.7%`、平衡准确率 `68.3%`、宏平均 F1 `64.0%`。
+- 轨迹模型：45 条轨迹（35 正、10 负），准确率 `95.6%`、平衡准确率 `90.0%`、宏平均 F1 `91.7%`。
+- 姿势分类器从 Random Forest 调整为在当前小样本交叉验证中表现更好的 Extra Trees；评估完成后，发布模型会使用全部已标注样本重新拟合。
+- 轨迹训练增加了 9 条经过文件命名规则筛选并成功通过篮球检测的坏弧线候选轨迹。
+
+这些结果是有希望的内部验证结果，不构成统计显著性或真实用户泛化能力的证明。新增坏弧线来自同一组视频，样本之间可能相关；姿势负样本也仍然不足。后续应按投篮者和拍摄场次分组切分，并使用完全独立的新用户测试集验证。出于隐私和仓库体积考虑，原始视频、私有索引和训练后的模型文件不会提交到 Git。
 
 ## 启动 API
 
@@ -87,6 +102,8 @@ flutter test
 ```
 
 完整端到端测试还需要 Firebase Emulator（或隔离测试项目）、`ffmpeg`、模型权重及一组没有隐私风险的短视频夹具。
+
+GitHub Actions 会在向 `main` 推送或提交 Pull Request 时自动执行后端测试、Python 编译检查、Flutter 测试、Dart 静态分析和 Android Debug APK 构建。当前静态分析中的 warning 与 info 会显示在日志中但暂不阻断 CI；真正的分析 error、测试失败或构建失败仍会使检查失败。
 
 ## 发布前检查
 

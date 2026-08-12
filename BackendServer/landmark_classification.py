@@ -12,7 +12,7 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 
@@ -140,11 +140,12 @@ def load_training_data(list_path: str | Path) -> tuple[pd.DataFrame, pd.Series]:
     return pd.concat(features, ignore_index=True), pd.Series(labels, name="Label")
 
 
-def create_model() -> RandomForestClassifier:
-    """Create a reproducible classifier with class-imbalance compensation."""
-    return RandomForestClassifier(
-        n_estimators=300,
-        class_weight="balanced_subsample",
+def create_model() -> ExtraTreesClassifier:
+    """Create a reproducible classifier for the small, imbalanced dataset."""
+    return ExtraTreesClassifier(
+        n_estimators=500,
+        class_weight="balanced",
+        min_samples_leaf=2,
         random_state=42,
         n_jobs=-1,
     )
@@ -190,7 +191,11 @@ def train_and_save(list_path: str | Path, model_path: str | Path) -> None:
     model = create_model().fit(train_x, train_y)
     predictions = model.predict(test_x)
     print(classification_report(test_y, predictions, zero_division=0))
-    save_landmark_model(model, model_path, list(features.columns))
+
+    # Refit on every labeled recording after evaluation so the deployed model
+    # does not permanently discard the holdout portion of this small dataset.
+    final_model = create_model().fit(features, labels)
+    save_landmark_model(final_model, model_path, list(features.columns))
 
 
 if __name__ == "__main__":
