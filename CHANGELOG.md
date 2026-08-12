@@ -1,5 +1,50 @@
 # Changelog
 
+## 2026-08-13 — Model retraining and Android build validation
+
+### Model training
+
+- Replaced the shooting-form Random Forest with a class-balanced Extra Trees
+  classifier selected through repeated stratified cross-validation.
+- Refit deployable pose and trajectory models on all labeled recordings after
+  holdout evaluation, while retaining the holdout solely for reporting.
+- Expanded the private trajectory dataset from one to ten negative examples by
+  extracting nine reviewed bad-arc candidate videos with valid ball tracks.
+- Recorded 5-fold, 10-repeat cross-validation results: pose accuracy 81.7%,
+  balanced accuracy 68.3%, macro F1 64.0%; trajectory accuracy 95.6%, balanced
+  accuracy 90.0%, macro F1 91.7%.
+- Added the aggregate, privacy-safe training visualization at
+  `docs/training-results-1024.png`. Raw videos, private indexes, and serialized
+  models remain excluded from Git.
+
+### Training environment and pipeline
+
+- Added a project-local Python environment workflow and dependency constraints
+  compatible with the bundled legacy YOLOv5 checkpoint.
+- Pinned PyTorch below 2.6 and setuptools below 81 to retain trusted legacy
+  checkpoint and `pkg_resources` compatibility; declared GitPython explicitly.
+- Kept Ultralytics and Matplotlib generated configuration beside run artifacts
+  instead of writing user-profile caches.
+- Added English comments explaining the compatibility and final-refit choices.
+
+### Android build compatibility
+
+- Upgraded Gradle to 8.14, Android Gradle Plugin to 8.11.1, and Kotlin Gradle
+  Plugin to 2.2.20 for Flutter 3.44 compatibility on JDK 17.
+- Removed the obsolete generated `FlutterMultiDexApplication` that referenced a
+  missing legacy multidex library.
+- Verified dependency resolution, Flutter tests, and a successful debug APK
+  build. Static analysis still reports maintainability lints that will be
+  addressed separately.
+
+### Interpretation limits
+
+- The trajectory result may be optimistic because the added negative examples
+  originate from one related video group.
+- The pose model remains constrained by only seven negative recordings.
+- Future evaluation must split by shooter/session and use a held-out external
+  test set before making statistical-significance or production claims.
+
 ## 2026-08-11 — Authenticated API and mobile client update
 
 ### Security and privacy

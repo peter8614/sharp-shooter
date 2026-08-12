@@ -146,7 +146,11 @@ def train_and_save(list_path: str | Path, model_path: str | Path) -> None:
     )
     model = create_model().fit(train_x, train_y)
     print(classification_report(test_y, model.predict(test_x), zero_division=0))
-    save_trajectory_model(model, model_path, list(features.columns))
+
+    # Once evaluation is complete, train the deployable model on all available
+    # recordings instead of throwing away the holdout subset.
+    final_model = create_model().fit(features, labels)
+    save_trajectory_model(final_model, model_path, list(features.columns))
 
 
 if __name__ == "__main__":

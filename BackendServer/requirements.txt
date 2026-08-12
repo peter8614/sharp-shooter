@@ -1,5 +1,6 @@
 Flask>=3.0,<4
 firebase-admin>=6.6,<8
+GitPython>=3.1.30,<4
 joblib>=1.4,<2
 matplotlib>=3.9,<4
 mediapipe>=0.10.18,<0.11
@@ -15,8 +16,11 @@ requests>=2.32,<3
 scikit-learn>=1.5,<1.7
 scipy>=1.14,<2
 seaborn>=0.13,<1
-torch>=2.4,<3
-torchvision>=0.19,<1
+# The bundled legacy YOLOv5 code still imports pkg_resources.
+setuptools<81
+# PyTorch 2.6 changed legacy checkpoint loading and breaks these trusted YOLOv5 weights.
+torch>=2.4,<2.6
+torchvision>=0.19,<0.21
 tqdm>=4.67,<5
 ultralytics>=8.3,<9
 ultralytics-thop>=2,<3
