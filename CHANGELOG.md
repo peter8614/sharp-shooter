@@ -45,6 +45,8 @@
   Android debug APK build using Flutter 3.44.9.
 - Kept current warning/info lint debt visible but non-blocking; analyzer errors,
   test failures, and build failures remain blocking.
+- Added a bounded three-attempt retry for transient Gradle or Maven download
+  interruptions without hiding persistent compilation failures.
 
 ### Interpretation limits
 

@@ -85,5 +85,23 @@ jobs:
       - name: Run Flutter tests
         run: flutter test --no-pub
 
-      - name: Build debug APK
-        run: flutter build apk --debug --no-pub
+      - name: Build debug APK with network retry
+        shell: bash
+        run: |
+          # Hosted runners occasionally lose a Gradle or Maven download. Retry
+          # the complete build twice, but preserve failure after three attempts.
+          max_attempts=3
+          for attempt in $(seq 1 "$max_attempts"); do
+            if flutter build apk --debug --no-pub; then
+              exit 0
+            fi
+
+            if [ "$attempt" -eq "$max_attempts" ]; then
+              echo "::error::Android build failed after $max_attempts attempts."
+              exit 1
+            fi
+
+            delay_seconds=$((attempt * 20))
+            echo "::warning::Android build attempt $attempt failed; retrying in ${delay_seconds}s."
+            sleep "$delay_seconds"
+          done
