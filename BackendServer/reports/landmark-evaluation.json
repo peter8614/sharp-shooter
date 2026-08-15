@@ -1,0 +1,92 @@
+{
+  "evaluation": {
+    "method": "repeated_stratified_k_fold",
+    "folds": 5,
+    "repeats": 10,
+    "recordings": 36,
+    "confidence_level": 0.95,
+    "confidence_interval_method": "stratified_recording_level_percentile_bootstrap",
+    "bootstrap_samples": 2000,
+    "random_state": 42
+  },
+  "classes": [
+    {
+      "label": 0,
+      "name": "bad_form",
+      "recordings": 7
+    },
+    {
+      "label": 1,
+      "name": "good_form",
+      "recordings": 29
+    }
+  ],
+  "metrics": {
+    "accuracy": {
+      "value": 0.8166666666666667,
+      "ci_lower": 0.7138888888888889,
+      "ci_upper": 0.9055555555555556
+    },
+    "balanced_accuracy": {
+      "value": 0.6640394088669951,
+      "ci_lower": 0.5166871921182267,
+      "ci_upper": 0.8199568965517241
+    },
+    "macro_precision": {
+      "value": 0.701525054466231,
+      "ci_lower": 0.519250450801696,
+      "ci_upper": 0.9054904672176131
+    },
+    "macro_recall": {
+      "value": 0.6640394088669951,
+      "ci_lower": 0.5166871921182267,
+      "ci_upper": 0.8199568965517241
+    },
+    "macro_f1": {
+      "value": 0.6785018402251569,
+      "ci_lower": 0.510537636227323,
+      "ci_upper": 0.8324299163651105
+    },
+    "recall_class_0": {
+      "value": 0.4142857142857143,
+      "ci_lower": 0.14285714285714285,
+      "ci_upper": 0.7142857142857143
+    },
+    "recall_class_1": {
+      "value": 0.9137931034482759,
+      "ci_lower": 0.8137931034482758,
+      "ci_upper": 0.993103448275862
+    }
+  },
+  "confusion_matrix": {
+    "labels": [
+      0,
+      1
+    ],
+    "values": [
+      [
+        29,
+        41
+      ],
+      [
+        25,
+        265
+      ]
+    ],
+    "note": "Counts aggregate one out-of-fold prediction per recording per repeat."
+  },
+  "priority_class": {
+    "label": 0,
+    "name": "bad_form",
+    "recall": {
+      "value": 0.4142857142857143,
+      "ci_lower": 0.14285714285714285,
+      "ci_upper": 0.7142857142857143
+    },
+    "false_good_rate": {
+      "value": 0.5857142857142856,
+      "ci_lower": 0.2857142857142857,
+      "ci_upper": 0.8571428571428572
+    }
+  }
+}

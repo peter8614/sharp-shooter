@@ -1,0 +1,3 @@
+actual\predicted,bad_trajectory,good_trajectory
+bad_trajectory,80,20
+good_trajectory,0,350
