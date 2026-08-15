@@ -13,8 +13,8 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import ExtraTreesClassifier
-from sklearn.metrics import classification_report
-from sklearn.model_selection import train_test_split
+
+from model_evaluation import evaluate_repeated_stratified_cv, write_evaluation_report
 
 
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -27,6 +27,7 @@ LANDMARK_NAMES = (
     "Right Wrist",
 )
 MODEL_VERSION = 2
+REPORT_PREFIX = BACKEND_DIR / "reports/landmark-evaluation"
 
 
 def _parse_point(value: object) -> np.ndarray:
@@ -116,12 +117,17 @@ def load_single_landmark_file(file_path: str | Path, label: int | None = None) -
 
 
 def _resolve_data_path(value: str | Path, list_path: Path) -> Path:
-    """Resolve list entries against either the list directory or backend root."""
+    """Resolve list entries against this or the index file's backend tree."""
     path = Path(value)
     if path.is_absolute():
         return path
-    backend_candidate = BACKEND_DIR / path
-    return backend_candidate if backend_candidate.exists() else list_path.parent / path
+    # Searching index ancestors permits privacy-safe code copies to evaluate a
+    # local dataset without copying raw recordings into the Git repository.
+    for base in (BACKEND_DIR, *list_path.parents):
+        candidate = base / path
+        if candidate.exists():
+            return candidate
+    return list_path.parent / path
 
 
 def load_training_data(list_path: str | Path) -> tuple[pd.DataFrame, pd.Series]:
@@ -177,23 +183,26 @@ def landmark_predict(bundle: dict, features: pd.DataFrame) -> np.ndarray:
 
 
 def train_and_save(list_path: str | Path, model_path: str | Path) -> None:
-    """Train and evaluate using a video-level stratified holdout split."""
+    """Evaluate at video level, then fit the deployable model on all data."""
     features, labels = load_training_data(list_path)
-    if labels.nunique() < 2 or labels.value_counts().min() < 2:
-        raise ValueError("At least two recordings per class are required")
-    train_x, test_x, train_y, test_y = train_test_split(
+    report = evaluate_repeated_stratified_cv(
+        create_model,
         features,
         labels,
-        test_size=0.2,
+        {0: "bad_form", 1: "good_form"},
+        # Bad-form recall is the safety-focused metric: missing a bad form
+        # produces an overly reassuring result for the user.
+        priority_label=0,
+        n_splits=5,
+        n_repeats=10,
+        confidence_level=0.95,
         random_state=42,
-        stratify=labels,
     )
-    model = create_model().fit(train_x, train_y)
-    predictions = model.predict(test_x)
-    print(classification_report(test_y, predictions, zero_division=0))
+    report_paths = write_evaluation_report(report, REPORT_PREFIX)
+    print(report_paths["markdown"].read_text(encoding="utf-8"))
 
-    # Refit on every labeled recording after evaluation so the deployed model
-    # does not permanently discard the holdout portion of this small dataset.
+    # Refit on every labeled recording only after all out-of-fold predictions
+    # have been collected, so evaluation never sees its own training rows.
     final_model = create_model().fit(features, labels)
     save_landmark_model(final_model, model_path, list(features.columns))
 

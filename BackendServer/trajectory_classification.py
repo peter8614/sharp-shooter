@@ -8,13 +8,14 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report
-from sklearn.model_selection import train_test_split
+
+from model_evaluation import evaluate_repeated_stratified_cv, write_evaluation_report
 
 
 BACKEND_DIR = Path(__file__).resolve().parent
 MODEL_VERSION = 2
 SAMPLE_COUNT = 25
+REPORT_PREFIX = BACKEND_DIR / "reports/trajectory-evaluation"
 
 
 def _read_trajectory(file_path: str | Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -79,11 +80,17 @@ def load_trajectory(file_path: str | Path, label: int | None = None) -> pd.DataF
 
 
 def _resolve_data_path(value: str | Path, list_path: Path) -> Path:
+    """Resolve list entries against this or the index file's backend tree."""
     path = Path(value)
     if path.is_absolute():
         return path
-    backend_candidate = BACKEND_DIR / path
-    return backend_candidate if backend_candidate.exists() else list_path.parent / path
+    # Keep private recordings in their original workspace while allowing the
+    # sanitized repository code to run the aggregate evaluation locally.
+    for base in (BACKEND_DIR, *list_path.parents):
+        candidate = base / path
+        if candidate.exists():
+            return candidate
+    return list_path.parent / path
 
 
 def load_training_data(list_path: str | Path) -> tuple[pd.DataFrame, pd.Series]:
@@ -133,22 +140,24 @@ def trajectory_predict(bundle: dict, features: pd.DataFrame) -> np.ndarray:
 
 
 def train_and_save(list_path: str | Path, model_path: str | Path) -> None:
-    """Train and evaluate without allowing observations from one video to leak."""
+    """Evaluate at recording level, then fit the deployable model on all data."""
     features, labels = load_training_data(list_path)
-    if labels.nunique() < 2 or labels.value_counts().min() < 2:
-        raise ValueError("At least two recordings per class are required")
-    train_x, test_x, train_y, test_y = train_test_split(
+    report = evaluate_repeated_stratified_cv(
+        create_model,
         features,
         labels,
-        test_size=0.2,
+        {0: "bad_trajectory", 1: "good_trajectory"},
+        priority_label=0,
+        n_splits=5,
+        n_repeats=10,
+        confidence_level=0.95,
         random_state=42,
-        stratify=labels,
     )
-    model = create_model().fit(train_x, train_y)
-    print(classification_report(test_y, model.predict(test_x), zero_division=0))
+    report_paths = write_evaluation_report(report, REPORT_PREFIX)
+    print(report_paths["markdown"].read_text(encoding="utf-8"))
 
-    # Once evaluation is complete, train the deployable model on all available
-    # recordings instead of throwing away the holdout subset.
+    # Refit only after evaluation so the published model can use all labeled
+    # recordings without contaminating the cross-validation measurements.
     final_model = create_model().fit(features, labels)
     save_trajectory_model(final_model, model_path, list(features.columns))
 
