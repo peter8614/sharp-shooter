@@ -42,7 +42,7 @@ Copy-Item .env.example .env
 - `FIREBASE_STORAGE_BUCKET`：Firebase Storage bucket。
 - `FIREBASE_WEB_API_KEY`：仅用于 Firebase 邮箱登录 REST API。
 - `GOOGLE_APPLICATION_CREDENTIALS`：仓库外的服务账号 JSON 绝对路径；云环境优先使用 Application Default Credentials。
-- `OPENAI_API_KEY`、`OPENAI_MODEL` 与随机的 `SAFETY_IDENTIFIER_SALT`：仅在启用 LLM 建议时需要。LLM 请求使用不可逆用户伪标识并设置 `store=False`。
+- `OPENAI_API_KEY` 与随机的 `SAFETY_IDENTIFIER_SALT`：仅在启用 LLM 建议时需要。OpenAI API 没有免费文本模型；默认使用低成本的 `gpt-5.4-nano`，可通过 `OPENAI_MODEL` 覆盖，并可用 `OPENAI_REASONING_EFFORT` 调整推理量。面向用户的反馈固定为英文。
 - `MAX_UPLOAD_BYTES`、`ANALYSIS_WORKERS`、`PORT`：可选运行参数。
 
 不要把 `.env` 或服务账号 JSON 放入仓库。此前若密钥曾进入文件或 Git 历史，应立即在相应控制台撤销/轮换；仅从当前目录删除并不能使已泄露的密钥失效。
@@ -76,6 +76,8 @@ python server.py
 ```
 
 开发服务器仅监听 `127.0.0.1`。生产环境应使用 WSGI 服务、反向代理和有效 HTTPS 证书，并为 Firebase Storage/Firestore 配置最小权限规则。任务状态可通过带 Token 的 `GET /jobs/{job_id}` 查询。
+
+LLM 教练请求不会再上传逐帧关键点：服务端先生成不含文件名和原始坐标的聚合统计摘要与安全标签，再要求模型用英文输出 `Main Findings` 和以行动为主的 `How to Improve`。内部标签代码不会发送给模型或展示给用户。详细设计见 [LLM 教练反馈协议](docs/llm-coaching.md)。
 
 ## Flutter 客户端
 

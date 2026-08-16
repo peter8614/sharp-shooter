@@ -17,9 +17,11 @@ from functools import wraps
 from pathlib import Path
 
 import cv2
+import pandas as pd
 from flask import Flask, g, jsonify, request
 from werkzeug.utils import secure_filename
 
+from coaching_labels import generate_prediction_labels, prediction_confidence
 from firebase_options import (
     db,
     generate_signed_url,
@@ -137,17 +139,55 @@ def _convert_to_mp4(input_path: Path, output_path: Path) -> None:
         raise RuntimeError("ffmpeg could not create the processed MP4")
 
 
-def _classification(model_path: Path, loader, feature_loader, predictor, data_path: Path) -> str:
-    """Run a current versioned model, or report a retraining requirement."""
+def _classification(
+    model_path: Path,
+    loader,
+    feature_loader,
+    predictor,
+    data_path: Path,
+    domain: str,
+) -> dict:
+    """Return a class, confidence, and deterministic coaching labels."""
     if not model_path.is_file():
-        return "unavailable"
+        label = "unavailable"
+        return {
+            "label": label,
+            "confidence": None,
+            "coaching_labels": generate_prediction_labels(
+                domain, label, None, pd.DataFrame()
+            ),
+        }
     try:
         bundle = loader(model_path)
-        prediction = predictor(bundle, feature_loader(data_path))
-        return "good" if int(prediction[0]) == 1 else "bad"
-    except (ValueError, OSError) as error:
+        features = feature_loader(data_path)
+        prediction = predictor(bundle, features)
+        numeric_label = int(prediction[0])
+        label = "good" if numeric_label == 1 else "bad"
+        ordered_features = features[bundle["features"]]
+        confidence = prediction_confidence(
+            bundle["model"], ordered_features, numeric_label
+        )
+        return {
+            "label": label,
+            "confidence": confidence,
+            "coaching_labels": generate_prediction_labels(
+                domain,
+                label,
+                confidence,
+                features,
+                bundle.get("good_form_reference", {}),
+            ),
+        }
+    except (KeyError, ValueError, OSError) as error:
         logger.warning("Model unavailable: %s", error)
-        return "unavailable"
+        label = "unavailable"
+        return {
+            "label": label,
+            "confidence": None,
+            "coaching_labels": generate_prediction_labels(
+                domain, label, None, pd.DataFrame()
+            ),
+        }
 
 
 def _llm_safety_identifier(user_id: str) -> str:
@@ -173,10 +213,20 @@ def _process_prediction(job_id: str, user_id: str, video_path: Path, work_dir: P
         _convert_to_mp4(annotated_avi, processed_mp4)
 
         form_result = _classification(
-            LANDMARK_MODEL, load_landmark_model, load_single_landmark_file, landmark_predict, landmark_path
+            LANDMARK_MODEL,
+            load_landmark_model,
+            load_single_landmark_file,
+            landmark_predict,
+            landmark_path,
+            "form",
         )
         trajectory_result = _classification(
-            TRAJECTORY_MODEL, load_trajectory_model, load_trajectory, trajectory_predict, trajectory_path
+            TRAJECTORY_MODEL,
+            load_trajectory_model,
+            load_trajectory,
+            trajectory_predict,
+            trajectory_path,
+            "trajectory",
         )
 
         artifact_id = uuid.uuid4().hex
@@ -196,12 +246,15 @@ def _process_prediction(job_id: str, user_id: str, video_path: Path, work_dir: P
             user_id,
             landmark_storage,
             trajectory_storage,
-            form_result,
-            trajectory_result,
+            form_result["label"],
+            trajectory_result["label"],
             video_storage,
             player_name,
             similarity,
             player_storage,
+            form_result["confidence"],
+            trajectory_result["confidence"],
+            form_result["coaching_labels"] + trajectory_result["coaching_labels"],
         )
         _set_job(job_id, status="complete", analysis_id=analysis_id)
     except Exception:
@@ -393,7 +446,17 @@ def get_llm_analysis():
     llm_last_request[g.user_id] = now
     try:
         landmark_data = grab_file_from_storage(analysis["landmark_file"]).decode("utf-8")
-        result = create_llm_analysis(landmark_data, _llm_safety_identifier(g.user_id))
+        result = create_llm_analysis(
+            landmark_data,
+            _llm_safety_identifier(g.user_id),
+            coaching_context={
+                "form_classification": analysis.get("form_classification"),
+                "trajectory_classification": analysis.get("trajectory_classification"),
+                "form_confidence": analysis.get("form_confidence"),
+                "trajectory_confidence": analysis.get("trajectory_confidence"),
+                "coaching_labels": analysis.get("coaching_labels", []),
+            },
+        )
         save_analysis_by_id(g.user_id, analysis_id, result)
         return jsonify({"text": result})
     except (UnicodeDecodeError, KeyError):

@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import ExtraTreesClassifier
 
+from coaching_labels import build_good_form_reference_profile
 from model_evaluation import evaluate_repeated_stratified_cv, write_evaluation_report
 
 
@@ -157,11 +158,22 @@ def create_model() -> ExtraTreesClassifier:
     )
 
 
-def save_landmark_model(model, model_path: str | Path, feature_names: list[str]) -> None:
-    """Save the estimator together with the exact feature contract."""
+def save_landmark_model(
+    model,
+    model_path: str | Path,
+    feature_names: list[str],
+    reference_profile: dict | None = None,
+) -> None:
+    """Save the estimator, feature contract, and optional coaching reference."""
     Path(model_path).parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(
-        {"version": MODEL_VERSION, "model": model, "features": feature_names},
+        {
+            "version": MODEL_VERSION,
+            "model": model,
+            "features": feature_names,
+            # Aggregate reference bands contain no recordings or frame data.
+            "good_form_reference": reference_profile or {},
+        },
         model_path,
     )
 
@@ -204,7 +216,13 @@ def train_and_save(list_path: str | Path, model_path: str | Path) -> None:
     # Refit on every labeled recording only after all out-of-fold predictions
     # have been collected, so evaluation never sees its own training rows.
     final_model = create_model().fit(features, labels)
-    save_landmark_model(final_model, model_path, list(features.columns))
+    reference_profile = build_good_form_reference_profile(features, labels)
+    save_landmark_model(
+        final_model,
+        model_path,
+        list(features.columns),
+        reference_profile,
+    )
 
 
 if __name__ == "__main__":

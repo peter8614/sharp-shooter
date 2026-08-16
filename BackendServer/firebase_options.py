@@ -61,6 +61,9 @@ def save_to_firestore(
     player_name=None,
     similarity_percent=None,
     player_recording_path=None,
+    form_confidence=None,
+    trajectory_confidence=None,
+    coaching_labels=None,
 ):
     """Create and return one analysis document for an authenticated user."""
     doc_ref = db.collection("users").document(user_id).collection("analysis").document()
@@ -75,6 +78,11 @@ def save_to_firestore(
             "player_name": player_name,
             "similarity_percentage": similarity_percent,
             "player_recording_path": player_recording_path,
+            "form_confidence": form_confidence,
+            "trajectory_confidence": trajectory_confidence,
+            # Labels contain aggregate evidence and controlled text only; raw
+            # pose frames remain in the user's private storage artifact.
+            "coaching_labels": coaching_labels or [],
         }
     )
     return doc_ref.id
