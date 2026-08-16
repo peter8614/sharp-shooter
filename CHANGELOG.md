@@ -1,5 +1,53 @@
 # Changelog
 
+## 2026-08-15 — Safer, lower-cost LLM coaching
+
+### Model and request configuration
+
+- Replaced the required unspecified model setting with a configurable
+  `gpt-5.4-nano` low-cost default; OpenAI API usage remains metered, not free.
+- Added explicit low reasoning effort and low response verbosity defaults for
+  the short coaching workload, with environment overrides for model and effort.
+
+### Prompt quality and privacy
+
+- Replaced raw frame-level landmark uploads with a local anonymous summary of
+  elbow angles, wrist heights, forearm offsets, shoulder tilt, and data quality.
+- Added a deterministic coaching-label generator that stores good-form reference
+  bands during pose-model training and reports up to two ranked, evidence-backed
+  deviations for bad-form predictions.
+- Added prediction confidence and sanitized coaching labels to Firestore analysis
+  records, while preserving compatibility with older model bundles.
+- Restricted the LLM to explaining locally generated findings, correction goals,
+  and drills instead of inventing posture problems from aggregate measurements.
+- Changed user-facing coaching to English-only `Main Findings` and
+  action-focused `How to Improve` sections. Internal label codes, redundant
+  generic flags, data-quality sections, and limits/safety sections are no longer
+  shown to users.
+- Rewrote the coaching prompt with evidence boundaries, known pose-estimation
+  limitations, a two-section English output contract, and a 180-word response
+  limit.
+- Prevented conclusions when fewer than five usable shot frames are available
+  and prohibited invented ideal angles, injury claims, handedness assumptions,
+  professional-player comparisons, and unsupported lower-body feedback.
+- Added unit tests for reference-profile creation, label ranking, predicted-class
+  confidence, legacy-bundle fallback, context sanitization, and the existing API
+  privacy and insufficient-data contracts.
+
+### Retraining validation
+
+- Retrained the pose classifier on 36 recording-level samples (7 bad-form and
+  29 good-form recordings) with repeated stratified 5-fold cross-validation over
+  10 repeats.
+- Recorded 81.7% accuracy, 66.4% balanced accuracy, and 67.9% macro F1. Bad-form
+  recall remained only 41.4%, with a 58.6% false-good rate, so this model is kept
+  for development and label integration testing rather than presented as a
+  production-quality result.
+- Verified that the local model bundle contains four aggregate good-form reference
+  features and can produce a specific evidence-backed elbow label. Generated model
+  files remain excluded from Git; the reproducible evaluation report stays under
+  `BackendServer/reports/`.
+
 ## 2026-08-15 — Reproducible model evaluation reports
 
 ### Evaluation metrics
