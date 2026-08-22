@@ -4,6 +4,16 @@
 
 An end-to-end basketball shot analysis system that turns a phone video into explainable feedback on shooting form and ball trajectory. Sharp Shooter combines a Flutter mobile experience, a secure Flask API, computer-vision pipelines, classical machine learning, and privacy-conscious LLM coaching.
 
+## Demo videos
+
+- [Demo 1 — processed shot and AI coaching](docs/demos/sharp-shooter-demo-1.mp4)
+- [Demo 2 — trajectory analysis and reference comparison](docs/demos/sharp-shooter-demo-2.mp4)
+- [Demo 3 — outdoor shot analysis and coaching summary](docs/demos/sharp-shooter-demo-3.mp4)
+
+These short, silent screen recordings demonstrate the mobile analysis workflow.
+Audio and device metadata were removed before publication. See the
+[demo media notice](docs/demos/README.md) for attribution and usage context.
+
 ## What I built
 
 - Delivered a cross-platform Flutter workflow for recording or selecting a shot, authenticated upload, asynchronous progress tracking, processed-video playback, analysis history, and coaching results.
@@ -75,6 +85,7 @@ mobile/                  Flutter application
 BackendServer/           Flask API, vision pipeline, training code, and tests
 BackendServer/reports/   Reproducible, privacy-safe model evaluation artifacts
 docs/                    Evaluation and LLM coaching design notes
+docs/demos/              Privacy-sanitized product demonstration videos
 frontend/                Static product concept UI
 THIRD_PARTY_NOTICES.md   Attribution and third-party license summary
 ```
