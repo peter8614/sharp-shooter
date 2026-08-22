@@ -83,6 +83,7 @@ BackendServer/NBA Data/
 *.mov
 *.mkv
 *.gif
+!docs/demos/*.mp4
 
 # Personal documents and archives
 *.zip
