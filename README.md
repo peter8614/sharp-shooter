@@ -17,6 +17,8 @@ Audio and device metadata were removed before publication. See the
 ## What I built
 
 - Delivered a cross-platform Flutter workflow for recording or selecting a shot, authenticated upload, asynchronous progress tracking, processed-video playback, analysis history, and coaching results.
+- Centralized the mobile/backend contract in a typed API client with compatible response parsing, explicit loading/error/empty states, bounded job polling, one-time 401 retry, and single-flight Firebase token refresh.
+- Added an in-app account and privacy area with readable legal documents, sign-out, and complete account deletion across Firebase Authentication, Firestore, Storage, queued jobs, and server scratch files.
 - Built a Flask analysis service that extracts upper-body landmarks with MediaPipe, tracks the basketball with a YOLOv5 detector adapted from the MIT-licensed [basketball-detection](https://github.com/Stardust87/basketball-detection) project, classifies shooting form and trajectory, and returns an H.264 annotated video.
 - Designed recording-level feature pipelines and versioned model bundles so training and inference share an enforced feature schema.
 - Prevented validation leakage by treating each video as one sample instead of splitting frames from the same recording across training and validation.
@@ -40,7 +42,7 @@ The trajectory model demonstrates strong prototype performance. The form result 
 
 ```text
 Flutter mobile app
-    │  Firebase ID token + video upload
+    │  Firebase session + typed API client + video upload
     ▼
 Flask API / bounded job queue
     ├── MediaPipe pose landmarks ──► form features ──► Extra Trees classifier
@@ -49,14 +51,14 @@ Flask API / bounded job queue
     └── supported findings ─────────► constrained LLM coaching
                          │
                          ▼
-              Firebase Storage / Firestore
+       Firebase Auth / Storage / Firestore
 ```
 
 ## Technology
 
 | Area | Technologies and techniques |
 | --- | --- |
-| Mobile | Flutter, Dart, Camera, Chewie, authenticated HTTP, Android/iOS permissions |
+| Mobile | Flutter, Dart, Camera, Chewie, typed API client, token refresh, Android/iOS permissions |
 | Backend | Python, Flask, asynchronous bounded worker pool, REST APIs |
 | Computer vision | MediaPipe Pose, Ultralytics YOLOv5, a third-party basketball detector, OpenCV, FFmpeg |
 | Machine learning | scikit-learn, Extra Trees, recording-level feature engineering, repeated stratified cross-validation, bootstrap confidence intervals |
@@ -74,9 +76,11 @@ The original frame-level approach could place frames from the same video in both
 
 The pose model stores good-form reference bands for interpretable features such as elbow angle and wrist height. Local code ranks deviations and provides the LLM with named findings, correction goals, and drills. The prompt prevents unsupported injury claims, invented ideal angles, lower-body conclusions, and professional-player comparisons. The complete contract is documented in [docs/llm-coaching.md](docs/llm-coaching.md).
 
-### Privacy and API security
+### Privacy, sessions, and account lifecycle
 
-The server derives identity from verified Firebase ID tokens instead of trusting a client-provided user ID. Raw videos and landmarks stay out of Git, uploads are validated and isolated per job, and LLM requests contain aggregate pose summaries rather than raw biometric sequences. See [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md).
+The server derives identity from verified Firebase ID tokens instead of trusting a client-provided user ID. The mobile client refreshes expiring ID tokens through a narrow backend contract, retries a protected request at most once, and clears navigation state on terminal authentication failure. Raw videos and landmarks stay out of Git, uploads are validated and isolated per job, and LLM requests contain aggregate pose summaries rather than raw biometric sequences.
+
+Users can read the privacy policy and terms before registration and from the authenticated Account page. Account deletion removes analysis documents in bounded batches, private Storage objects, temporary job data, and finally the Firebase identity. Per-user publication locks prevent a running analysis from recreating data after deletion. See [PRIVACY.md](PRIVACY.md), [SECURITY.md](SECURITY.md), and the [backend authentication contract](BackendServer/README.md#authentication-sessions).
 
 ## Repository layout
 
@@ -115,6 +119,20 @@ flutter pub get
 flutter run --dart-define=BACKEND_URL=https://your-api.example.com
 ```
 
+iOS releases require macOS, a supported Xcode installation, CocoaPods, and the
+existing App Store signing team. The checked wrapper refuses placeholder,
+insecure, local, or credential-bearing backend URLs before creating an IPA:
+
+```bash
+cd mobile
+flutter pub get
+cd ios && pod install && cd ..
+BACKEND_URL=https://api.your-production-domain.com \
+  bash tool/build_ios_release.sh --build-name=1.1.0 --build-number=2
+```
+
+See the [mobile release notes](mobile/README.md#ios-release-build) for details.
+
 ## Test and evaluate
 
 ```powershell
@@ -139,4 +157,4 @@ The basketball detector weights and portions of the trajectory-processing pipeli
 
 ## Scope
 
-Sharp Shooter demonstrates full-stack product development, applied computer vision, ML evaluation, cloud authentication, and responsible AI integration. It is a portfolio prototype, not a medical device or a substitute for a qualified coach. Production validation would require a larger, coach-reviewed dataset split by shooter and session, an independent test set, formal retention/deletion controls, and production-grade deployment infrastructure.
+Sharp Shooter demonstrates full-stack product development, applied computer vision, ML evaluation, cloud authentication, and responsible AI integration. It is a portfolio prototype, not a medical device or a substitute for a qualified coach. Production validation would require a larger, coach-reviewed dataset split by shooter and session, an independent test set, reviewed and externally hosted legal/support content, and production-grade deployment infrastructure and monitoring.

@@ -26,6 +26,13 @@ should replace both tokens because Firebase may rotate the refresh token. Only
 the ID token belongs in the `Authorization: Bearer ...` header; refresh tokens
 must never be logged or sent to protected resource endpoints.
 
+`DELETE /account` uses the authenticated ID token and permanently deletes the
+user's analysis documents, every Storage object below the user's private prefix,
+and then the Firebase Authentication identity. Authentication is removed last so
+a partial data-service failure remains retryable. The service serializes deletion
+against background analysis publication to prevent a running job from recreating
+data after deletion.
+
 ## Analyze one video
 
 Run commands from the `BackendServer` folder:

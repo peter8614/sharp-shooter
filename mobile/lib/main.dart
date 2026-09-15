@@ -1,13 +1,19 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:shot_rater/config/release_configuration.dart';
 import 'package:shot_rater/constants.dart';
 
 import 'loginScreen.dart';
 import 'splashscreen.dart';
-import 'package:flutter/material.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final configurationError = productionBackendUrlError(backendUrl);
+  if (kReleaseMode && configurationError != null) {
+    throw StateError('Invalid release configuration: $configurationError');
+  }
   apiClient.onUnauthorized = () {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       rootNavigatorKey.currentState?.pushAndRemoveUntil(

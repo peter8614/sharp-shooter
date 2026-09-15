@@ -30,6 +30,7 @@ class ApiClient {
     http.Client? client,
     this.requestTimeout = const Duration(seconds: 20),
     this.uploadTimeout = const Duration(minutes: 10),
+    this.accountDeletionTimeout = const Duration(minutes: 2),
   })  : _baseUrl = baseUrl.replaceFirst(RegExp(r'/+$'), ''),
         _sessionStore = sessionStore,
         _client = client ?? http.Client();
@@ -39,6 +40,7 @@ class ApiClient {
   final http.Client _client;
   final Duration requestTimeout;
   final Duration uploadTimeout;
+  final Duration accountDeletionTimeout;
 
   UnauthorizedCallback? onUnauthorized;
   Future<AuthSession>? _refreshInFlight;
@@ -183,9 +185,31 @@ class ApiClient {
     return uri;
   }
 
+  Future<void> deleteAccount() async {
+    final response = await _delete(
+      '/account',
+      timeout: accountDeletionTimeout,
+    );
+    final object = _decodeSuccessfulObject(response);
+    if (object['status'] != 'deleted') {
+      throw const ApiException(
+          'The account deletion response could not be read.');
+    }
+  }
+
   Future<http.Response> _get(String path) async {
     return _sendAuthenticated(
       (headers) => _client.get(_uri(path), headers: headers),
+    );
+  }
+
+  Future<http.Response> _delete(
+    String path, {
+    Duration? timeout,
+  }) async {
+    return _sendAuthenticated(
+      (headers) => _client.delete(_uri(path), headers: headers),
+      timeout: timeout,
     );
   }
 
@@ -216,16 +240,19 @@ class ApiClient {
   Future<http.Response> _sendAuthenticated(
     Future<http.Response> Function(Map<String, String> headers) send, {
     bool json = false,
+    Duration? timeout,
   }) async {
     await _refreshIfNeeded();
     final tokenUsed = _sessionStore.idToken;
     var response = await _sendWithTimeout(
       () => send(_authenticatedHeaders(json: json)),
+      timeout: timeout,
     );
     if (response.statusCode == 401 && _sessionStore.canRefresh) {
       if (_sessionStore.idToken == tokenUsed) await refreshSession();
       response = await _sendWithTimeout(
         () => send(_authenticatedHeaders(json: json)),
+        timeout: timeout,
       );
     }
     return response;
@@ -240,10 +267,11 @@ class ApiClient {
   }
 
   Future<http.Response> _sendWithTimeout(
-    Future<http.Response> Function() send,
-  ) async {
+    Future<http.Response> Function() send, {
+    Duration? timeout,
+  }) async {
     try {
-      return await send().timeout(requestTimeout);
+      return await send().timeout(timeout ?? requestTimeout);
     } on TimeoutException {
       throw const ApiException('The request timed out. Please try again.');
     } on ApiException {

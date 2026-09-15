@@ -15,6 +15,7 @@ import requests
 from firebase_admin import auth, credentials, firestore, storage
 from dotenv import load_dotenv
 
+from account_deletion import delete_account_data
 from auth_contract import refreshed_session_payload, sign_in_session_payload
 
 
@@ -180,6 +181,16 @@ def verify_user_token(token):
     if not token:
         raise ValueError("A Firebase ID token is required")
     return auth.verify_id_token(token)["uid"]
+
+
+def delete_user_account(user_id):
+    """Delete all account-owned data before removing the Firebase identity."""
+    return delete_account_data(
+        user_id,
+        firestore_client=db,
+        storage_bucket=bucket,
+        auth_client=auth,
+    )
 
 
 def save_to_firebase_storage(user_id, folder, filename, local_file_path):

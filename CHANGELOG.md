@@ -1,5 +1,64 @@
 # Changelog
 
+## 2026-09-15 — Mobile reliability and App Store readiness
+
+### API compatibility and session lifecycle
+
+- Centralized mobile HTTP behavior in a typed API client while preserving the
+  existing backend endpoint and response-field contract.
+- Added consistent timeout, server-error, empty-state, and terminal 401 handling;
+  an unrecoverable authentication failure now clears the navigation stack.
+- Added asynchronous job polling with bounded backoff and retry behavior that
+  retains a known job ID after transient network errors to avoid duplicate uploads.
+- Added proactive Firebase ID-token refresh, one-time reactive 401 refresh and
+  retry, rotated refresh-token support, single-flight refresh coordination, and
+  session revision checks that prevent a stale response from restoring a signed-out
+  session.
+
+### Typed history and navigation
+
+- Replaced loosely typed history maps with nullable domain models and an enum
+  that safely preserves unknown future classification values.
+- Added loading, retry, pull-to-refresh, empty, sorted-list, and detail states for
+  history, including direct processed-video playback and coaching details.
+- Moved the main shell to Material 3 navigation and added direct routing from a
+  completed analysis to the History destination.
+
+### Account deletion and legal access
+
+- Added authenticated `DELETE /account` support that deletes Firestore analysis
+  records in bounded batches, private Firebase Storage objects, server job data,
+  and finally the Firebase Authentication identity.
+- Serialized deletion against per-user result publication so queued or running
+  analysis work cannot recreate private data after an account has been deleted.
+- Added an Account destination with sign-out, Privacy Policy, Terms of Service,
+  and a clearly confirmed permanent account-deletion action.
+- Made the policy and terms readable before account creation from both the login
+  and registration flows. The included copy reflects the implemented Firebase
+  and privacy-conscious LLM data paths and remains subject to owner/legal review
+  before App Store submission.
+
+### iOS release preparation
+
+- Raised the Xcode project and Flutter framework deployment target from iOS 12
+  to iOS 13 and restored the CocoaPods integration file required by native Flutter
+  plugins.
+- Added a canonical iOS release wrapper and a runtime safeguard that reject empty,
+  non-HTTPS, local, reserved, query-bearing, fragment-bearing, or credential-bearing
+  production API URLs.
+- Documented the macOS `pod install` and signed IPA workflow without embedding
+  backend credentials or Apple signing material in application configuration.
+
+### Validation
+
+- Expanded the backend suite to 27 passing tests, including bounded, retry-safe
+  account cleanup and the authentication compatibility contract.
+- Expanded the Flutter suite to 15 passing tests, including account/legal UI,
+  deletion requests, typed API behavior, token refresh, and release URL validation.
+- Verified Python compilation, a successful Android debug APK build, and no new
+  analyzer errors or warnings; the existing information-level style debt remains
+  visible.
+
 ## 2026-08-15 — Safer, lower-cost LLM coaching
 
 ### Model and request configuration

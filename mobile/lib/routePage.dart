@@ -1,12 +1,13 @@
+import 'package:flutter/material.dart';
+import 'package:shot_rater/account/account_page.dart';
 import 'package:shot_rater/analyze/analyzeVideoScreen.dart';
 import 'package:shot_rater/history/historyScreen.dart';
-import 'package:flutter/material.dart';
 
 class RouteVolunteerPage extends StatefulWidget {
   const RouteVolunteerPage({
     super.key,
     this.initialIndex = 0,
-  }) : assert(initialIndex >= 0 && initialIndex < 2);
+  }) : assert(initialIndex >= 0 && initialIndex < 3);
 
   final int initialIndex;
 
@@ -22,7 +23,11 @@ class _RouteVolunteerPageState extends State<RouteVolunteerPage> {
   void initState() {
     super.initState();
     _selectedIndex = widget.initialIndex;
-    _widgetOptions = [AnalyzeVideoPage(), const HistoryPage()];
+    _widgetOptions = [
+      AnalyzeVideoPage(),
+      const HistoryPage(),
+      const AccountPage(),
+    ];
   }
 
   void _onItemTapped(int index) {
@@ -50,6 +55,11 @@ class _RouteVolunteerPageState extends State<RouteVolunteerPage> {
             icon: Icon(Icons.history_outlined),
             selectedIcon: Icon(Icons.history),
             label: 'History',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
+            label: 'Account',
           ),
         ],
       ),

@@ -24,6 +24,7 @@ from werkzeug.utils import secure_filename
 from coaching_labels import generate_prediction_labels, prediction_confidence
 from firebase_options import (
     db,
+    delete_user_account,
     generate_signed_url,
     get_analysis_by_id,
     grab_file_from_storage,
@@ -64,6 +65,28 @@ executor = ThreadPoolExecutor(max_workers=int(os.getenv("ANALYSIS_WORKERS", "2")
 jobs: dict[str, dict] = {}
 jobs_lock = threading.Lock()
 llm_last_request: dict[str, float] = {}
+user_data_locks: dict[str, threading.Lock] = {}
+deleting_users: set[str] = set()
+
+
+class AccountDeletionInProgress(RuntimeError):
+    """Raised when a request tries to publish data for a deleting account."""
+
+
+def _user_data_lock(user_id: str) -> threading.Lock:
+    """Return a stable per-user lock without serializing unrelated accounts."""
+    with jobs_lock:
+        return user_data_locks.setdefault(user_id, threading.Lock())
+
+
+def _account_deletion_started(user_id: str) -> bool:
+    with jobs_lock:
+        return user_id in deleting_users
+
+
+def _ensure_account_active(user_id: str) -> None:
+    if _account_deletion_started(user_id):
+        raise AccountDeletionInProgress("Account deletion is in progress")
 
 
 def _set_job(job_id: str, **updates) -> None:
@@ -101,6 +124,8 @@ def require_auth(view):
             g.user_id = verify_user_token(token)
         except Exception:
             return _error("The authentication token is invalid or expired", 401)
+        if _account_deletion_started(g.user_id):
+            return _error("Account deletion is in progress", 409)
         return view(*args, **kwargs)
 
     return wrapped
@@ -230,34 +255,43 @@ def _process_prediction(job_id: str, user_id: str, video_path: Path, work_dir: P
             "trajectory",
         )
 
-        artifact_id = uuid.uuid4().hex
-        landmark_storage = save_to_firebase_storage(user_id, "landmarks", f"{artifact_id}.csv", landmark_path)
-        trajectory_storage = save_to_firebase_storage(user_id, "trajectories", f"{artifact_id}.txt", trajectory_path)
-        video_storage = save_to_firebase_storage(user_id, "videos", f"{artifact_id}.mp4", processed_mp4)
-
         player_name, similarity, player_path = compare_user_to_player(landmark_path, NBA_DATA_DIR, NBA_VIDEO_DIR)
-        player_storage = None
-        if player_path:
-            # Copying the reference below the user's prefix makes later ownership
-            # checks simple and avoids exposing arbitrary bucket objects.
-            player_storage = save_to_firebase_storage(
-                user_id, "references", f"{artifact_id}.mp4", player_path
+        artifact_id = uuid.uuid4().hex
+        with _user_data_lock(user_id):
+            _ensure_account_active(user_id)
+            landmark_storage = save_to_firebase_storage(
+                user_id, "landmarks", f"{artifact_id}.csv", landmark_path
             )
-        analysis_id = save_to_firestore(
-            user_id,
-            landmark_storage,
-            trajectory_storage,
-            form_result["label"],
-            trajectory_result["label"],
-            video_storage,
-            player_name,
-            similarity,
-            player_storage,
-            form_result["confidence"],
-            trajectory_result["confidence"],
-            form_result["coaching_labels"] + trajectory_result["coaching_labels"],
-        )
-        _set_job(job_id, status="complete", analysis_id=analysis_id)
+            trajectory_storage = save_to_firebase_storage(
+                user_id, "trajectories", f"{artifact_id}.txt", trajectory_path
+            )
+            video_storage = save_to_firebase_storage(
+                user_id, "videos", f"{artifact_id}.mp4", processed_mp4
+            )
+            player_storage = None
+            if player_path:
+                # Keeping references under the user's prefix lets account
+                # deletion remove every private object with one bounded scope.
+                player_storage = save_to_firebase_storage(
+                    user_id, "references", f"{artifact_id}.mp4", player_path
+                )
+            analysis_id = save_to_firestore(
+                user_id,
+                landmark_storage,
+                trajectory_storage,
+                form_result["label"],
+                trajectory_result["label"],
+                video_storage,
+                player_name,
+                similarity,
+                player_storage,
+                form_result["confidence"],
+                trajectory_result["confidence"],
+                form_result["coaching_labels"] + trajectory_result["coaching_labels"],
+            )
+            _set_job(job_id, status="complete", analysis_id=analysis_id)
+    except AccountDeletionInProgress:
+        _set_job(job_id, status="failed", error="Account was deleted")
     except Exception:
         logger.exception("Analysis job %s failed", job_id)
         _set_job(job_id, status="failed", error="Video analysis failed")
@@ -317,6 +351,41 @@ def refresh_token():
 @require_auth
 def verify_token_route():
     return jsonify({"status": "success", "user_id": g.user_id})
+
+
+@server.delete("/account")
+@require_auth
+def delete_account():
+    """Delete the authenticated identity and all account-owned data."""
+    with jobs_lock:
+        if g.user_id in deleting_users:
+            return _error("Account deletion is already in progress", 409)
+        deleting_users.add(g.user_id)
+        operation_lock = user_data_locks.setdefault(g.user_id, threading.Lock())
+
+    try:
+        with operation_lock:
+            deleted = delete_user_account(g.user_id)
+    except Exception:
+        with jobs_lock:
+            deleting_users.discard(g.user_id)
+        logger.exception("Account deletion failed")
+        return _error("The account could not be deleted. Please try again.", 503)
+
+    owned_job_ids = []
+    with jobs_lock:
+        llm_last_request.pop(g.user_id, None)
+        for job_id, job in jobs.items():
+            if job.get("owner") == g.user_id:
+                job.update(status="failed", error="Account was deleted")
+                owned_job_ids.append(job_id)
+    for job_id in owned_job_ids:
+        # Queued or running workers still observe the deletion tombstone before
+        # publishing. Removing their private scratch data also minimizes how
+        # long the originally uploaded video remains on this server.
+        shutil.rmtree(UPLOAD_ROOT / job_id, ignore_errors=True)
+        shutil.rmtree(WORK_ROOT / job_id, ignore_errors=True)
+    return jsonify({"status": "deleted", "deleted": deleted})
 
 
 @server.post("/get_prediction")
@@ -428,13 +497,19 @@ def get_nba_player_data():
         landmark_path = temporary_dir / "landmarks.csv"
         landmark_path.write_bytes(grab_file_from_storage(analysis["landmark_file"]))
         player_name, similarity, player_path = compare_user_to_player(landmark_path, NBA_DATA_DIR, NBA_VIDEO_DIR)
-        player_storage = None
-        if player_path:
-            player_storage = save_to_firebase_storage(g.user_id, "references", f"{uuid.uuid4().hex}.mp4", player_path)
-        update_document("users", g.user_id, "analysis", analysis_id, "player_name", player_name)
-        update_document("users", g.user_id, "analysis", analysis_id, "similarity_percentage", similarity)
-        update_document("users", g.user_id, "analysis", analysis_id, "player_recording_path", player_storage)
+        with _user_data_lock(g.user_id):
+            _ensure_account_active(g.user_id)
+            player_storage = None
+            if player_path:
+                player_storage = save_to_firebase_storage(
+                    g.user_id, "references", f"{uuid.uuid4().hex}.mp4", player_path
+                )
+            update_document("users", g.user_id, "analysis", analysis_id, "player_name", player_name)
+            update_document("users", g.user_id, "analysis", analysis_id, "similarity_percentage", similarity)
+            update_document("users", g.user_id, "analysis", analysis_id, "player_recording_path", player_storage)
         return jsonify({"status": "success", "player_name": player_name, "similarity_percentage": similarity})
+    except AccountDeletionInProgress:
+        return _error("Account deletion is in progress", 409)
     except Exception:
         logger.exception("NBA comparison failed")
         return _error("Could not compare this analysis", 500)
@@ -470,8 +545,12 @@ def get_llm_analysis():
                 "coaching_labels": analysis.get("coaching_labels", []),
             },
         )
-        save_analysis_by_id(g.user_id, analysis_id, result)
+        with _user_data_lock(g.user_id):
+            _ensure_account_active(g.user_id)
+            save_analysis_by_id(g.user_id, analysis_id, result)
         return jsonify({"text": result})
+    except AccountDeletionInProgress:
+        return _error("Account deletion is in progress", 409)
     except (UnicodeDecodeError, KeyError):
         return _error("Stored landmark data is invalid", 422)
     except Exception:

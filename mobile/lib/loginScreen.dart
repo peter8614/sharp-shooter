@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api/api_client.dart';
 import 'constants.dart';
+import 'legal/legal_document_page.dart';
 import 'routePage.dart';
 import 'signupScreen.dart';
 
@@ -67,6 +68,36 @@ class LoginPage extends StatelessWidget {
                     style: TextStyle(fontSize: 20, color: Colors.blue)),
               )
             ],
+          ),
+          const SizedBox(height: 16),
+          Center(
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const LegalDocumentPage(
+                        document: LegalDocument.privacyPolicy,
+                      ),
+                    ),
+                  ),
+                  child: const Text('Privacy Policy'),
+                ),
+                const Text('•'),
+                TextButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const LegalDocumentPage(
+                        document: LegalDocument.termsOfService,
+                      ),
+                    ),
+                  ),
+                  child: const Text('Terms of Service'),
+                ),
+              ],
+            ),
           ),
         ],
       ),

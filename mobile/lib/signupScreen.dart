@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api/api_client.dart';
 import 'constants.dart';
+import 'legal/legal_document_page.dart';
 import 'routePage.dart';
 
 class Signup extends StatelessWidget {
@@ -215,10 +216,36 @@ class _SignupFormState extends State<SignupForm> {
                   value: agree,
                 ),
               ),
-              const Expanded(
+              Expanded(
                 flex: 4,
-                child: Text(
-                    'By creating an account, I agree to Terms & Conditions and Privacy Policy.'),
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const Text('By creating an account, I agree to the '),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const LegalDocumentPage(
+                            document: LegalDocument.termsOfService,
+                          ),
+                        ),
+                      ),
+                      child: const Text('Terms of Service'),
+                    ),
+                    const Text('and'),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const LegalDocumentPage(
+                            document: LegalDocument.privacyPolicy,
+                          ),
+                        ),
+                      ),
+                      child: const Text('Privacy Policy'),
+                    ),
+                    const Text('.'),
+                  ],
+                ),
               ),
             ],
           ),
@@ -238,7 +265,7 @@ class _SignupFormState extends State<SignupForm> {
                         ScaffoldMessenger.of(context)
                             .showSnackBar(const SnackBar(
                           content: Text(
-                            "You must agree to the Terms & Conditions to proceed.",
+                            'You must agree to the Terms of Service and Privacy Policy to proceed.',
                             style: TextStyle(fontSize: 16),
                           ),
                         ));

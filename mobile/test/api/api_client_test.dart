@@ -254,5 +254,25 @@ void main() {
       expect(store.isAuthenticated, isFalse);
       expect(notifications, 1);
     });
+
+    test('account deletion uses the authenticated DELETE endpoint', () async {
+      final store = SessionStore()
+        ..setSession(const AuthSession(userId: 'user-1', idToken: 'token-1'));
+      final client = ApiClient(
+        baseUrl: 'https://api.example.test',
+        sessionStore: store,
+        client: MockClient((request) async {
+          expect(request.method, 'DELETE');
+          expect(request.url.path, '/account');
+          expect(request.headers['Authorization'], 'Bearer token-1');
+          return http.Response(jsonEncode({'status': 'deleted'}), 200);
+        }),
+      );
+
+      await client.deleteAccount();
+
+      // Navigation owns the final clear so it can happen only after success.
+      expect(store.isAuthenticated, isTrue);
+    });
   });
 }
