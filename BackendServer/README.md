@@ -10,6 +10,22 @@ python -m venv .venv
 .venv\Scripts\python -m pip install -r requirements.txt
 ```
 
+## Authentication sessions
+
+`POST /sign_in` and `POST /register` keep their original `idToken` and
+`user_id` response fields and also return `refreshToken` and `expiresIn` when
+Firebase supplies them. Newer clients can exchange the refresh credential at
+`POST /refresh_token` using this JSON body:
+
+```json
+{"refresh_token": "<firebase-refresh-token>"}
+```
+
+The refresh response uses the same four session fields as sign-in. Clients
+should replace both tokens because Firebase may rotate the refresh token. Only
+the ID token belongs in the `Authorization: Bearer ...` header; refresh tokens
+must never be logged or sent to protected resource endpoints.
+
 ## Analyze one video
 
 Run commands from the `BackendServer` folder:

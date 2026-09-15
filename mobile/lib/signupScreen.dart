@@ -1,6 +1,6 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 
+import 'api/api_client.dart';
 import 'constants.dart';
 import 'routePage.dart';
 
@@ -29,7 +29,8 @@ class Signup extends StatelessWidget {
                 width: 110,
                 decoration: const BoxDecoration(
                   image: DecorationImage(
-                      image: AssetImage('assets/SharpShooter.png'), fit: BoxFit.cover),
+                      image: AssetImage('assets/SharpShooter.png'),
+                      fit: BoxFit.cover),
                 ),
               ),
             )
@@ -43,8 +44,8 @@ class Signup extends StatelessWidget {
             const SizedBox(height: 50),
             Text(appName,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 30)),
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 30)),
             Padding(
               padding: const EdgeInsets.all(8.0),
               child: SignupForm(),
@@ -55,7 +56,7 @@ class Signup extends StatelessWidget {
                 children: <Widget>[
                   const Text('Already here  ?',
                       style:
-                      TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
                   GestureDetector(
                     onTap: () {
                       Navigator.pop(context);
@@ -87,48 +88,40 @@ class _SignupFormState extends State<SignupForm> {
   String? password;
   bool _obscureText = false;
   bool agree = false;
+  bool _isSubmitting = false;
   final pass = TextEditingController();
+
+  @override
+  void dispose() {
+    pass.dispose();
+    super.dispose();
+  }
 
   // Helper method to register a user
   Future<void> registerUser(String email, String password) async {
-    const String apiUrl = "$backend_Url/register";
-
+    setState(() => _isSubmitting = true);
     try {
-      final response = await customHttpClient.post(
-        Uri.parse(apiUrl),
-        headers: {"Content-Type": "application/json"},
-        body: json.encode({"username": email, "password": password}),
-      );
-
-      if (response.statusCode == 200) {
-        final result = json.decode(response.body);
-        user_id = result["user_id"];
-        id_token = result["idToken"];
-        if (!mounted) return;
-        // Registration returns a valid Firebase session, so no second login is needed.
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const RouteVolunteerPage()),
-        );
-      } else {
-        final error = json.decode(response.body)["error"];
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-            error ?? "An error occurred. Please try again.",
-            style: const TextStyle(fontSize: 16),
-          ),
-        ));
-      }
-    } catch (e) {
+      await apiClient.register(email, password);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(
-          "Error: $e",
-          style: const TextStyle(fontSize: 16),
-        ),
-      ));
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const RouteVolunteerPage()),
+        (_) => false,
+      );
+    } on ApiException catch (error) {
+      _showError(error.message);
+    } catch (_) {
+      _showError('Registration failed. Please try again.');
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message, style: const TextStyle(fontSize: 16))),
+    );
   }
 
   @override
@@ -235,27 +228,36 @@ class _SignupFormState extends State<SignupForm> {
             height: 50,
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: () {
-                if (_formKey.currentState!.validate() && agree) {
-                  _formKey.currentState!.save();
-                  registerUser(email!, password!);
-                } else if (!agree) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text(
-                      "You must agree to the Terms & Conditions to proceed.",
-                      style: TextStyle(fontSize: 16),
-                    ),
-                  ));
-                }
-              },
+              onPressed: _isSubmitting
+                  ? null
+                  : () {
+                      if (_formKey.currentState!.validate() && agree) {
+                        _formKey.currentState!.save();
+                        registerUser(email!, password!);
+                      } else if (!agree) {
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(const SnackBar(
+                          content: Text(
+                            "You must agree to the Terms & Conditions to proceed.",
+                            style: TextStyle(fontSize: 16),
+                          ),
+                        ));
+                      }
+                    },
               style: ElevatedButton.styleFrom(
                   backgroundColor: primaryColor,
                   shape: const RoundedRectangleBorder(
                       borderRadius: BorderRadius.all(Radius.circular(24.0)))),
-              child: const Text(
-                'Sign Up',
-                style: TextStyle(color: Colors.white),
-              ),
+              child: _isSubmitting
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text(
+                      'Sign Up',
+                      style: TextStyle(color: Colors.white),
+                    ),
             ),
           ),
         ],

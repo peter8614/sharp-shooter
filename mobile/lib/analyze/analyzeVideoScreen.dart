@@ -3,6 +3,7 @@ import 'package:shot_rater/analyze/uploadVideoPage.dart';
 import 'package:flutter/material.dart';
 
 import '../constants.dart';
+import '../session_actions.dart';
 import 'imageButton.dart';
 
 class AnalyzeVideoPage extends StatelessWidget {
@@ -27,6 +28,13 @@ class AnalyzeVideoPage extends StatelessWidget {
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            onPressed: () => signOut(context),
+            tooltip: 'Sign out',
+            icon: const Icon(Icons.logout),
+          ),
+        ],
       ),
       body: Center(
         child: Column(
@@ -59,4 +67,3 @@ class AnalyzeVideoPage extends StatelessWidget {
     );
   }
 }
-

@@ -27,6 +27,7 @@ from firebase_options import (
     generate_signed_url,
     get_analysis_by_id,
     grab_file_from_storage,
+    refresh_user_token,
     register_or_login,
     save_analysis_by_id,
     save_to_firebase_storage,
@@ -297,6 +298,18 @@ def register():
         return register_or_login(data["username"], data["password"], is_registering=True)
     except Exception:
         logger.exception("Registration service failure")
+        return _error("Authentication service is unavailable", 503)
+
+
+@server.post("/refresh_token")
+def refresh_token():
+    data = request.get_json(silent=True) or {}
+    if not data.get("refresh_token"):
+        return _error("A refresh token is required", 400)
+    try:
+        return refresh_user_token(data["refresh_token"])
+    except Exception:
+        logger.exception("Token refresh service failure")
         return _error("Authentication service is unavailable", 503)
 
 

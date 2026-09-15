@@ -15,6 +15,8 @@ import requests
 from firebase_admin import auth, credentials, firestore, storage
 from dotenv import load_dotenv
 
+from auth_contract import refreshed_session_payload, sign_in_session_payload
+
 
 # Loading a local ignored .env is convenient for development; production
 # environments should inject the same values through a secret manager.
@@ -139,14 +141,38 @@ def register_or_login(email, password, is_registering=False):
     )
     payload = response.json()
     if response.ok:
-        return {
-            "idToken": payload.get("idToken"),
-            "user_id": payload.get("localId"),
-        }, 200
+        # The adapter preserves the original fields and adds refresh metadata.
+        return sign_in_session_payload(payload), 200
 
     # Avoid returning the full upstream response, which may contain internal details.
     message = payload.get("error", {}).get("message", "Authentication failed")
     return {"error": message}, 400
+
+
+def refresh_user_token(refresh_token):
+    """Exchange one Firebase refresh token for a new client session."""
+    if not refresh_token:
+        return {"error": "A refresh token is required"}, 400
+
+    api_key = os.getenv("FIREBASE_WEB_API_KEY")
+    if not api_key:
+        raise RuntimeError("FIREBASE_WEB_API_KEY is required")
+
+    response = requests.post(
+        f"https://securetoken.googleapis.com/v1/token?key={api_key}",
+        data={"grant_type": "refresh_token", "refresh_token": refresh_token},
+        timeout=15,
+    )
+    payload = response.json()
+    if response.ok:
+        return refreshed_session_payload(payload, refresh_token), 200
+
+    # Refresh tokens are credentials. Return only Firebase's safe error code,
+    # never the submitted token or full upstream response.
+    message = payload.get("error", {}).get(
+        "message", "The session could not be refreshed"
+    )
+    return {"error": message}, 401
 
 
 def verify_user_token(token):

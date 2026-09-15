@@ -1,6 +1,6 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 
+import 'api/api_client.dart';
 import 'constants.dart';
 import 'routePage.dart';
 import 'signupScreen.dart';
@@ -46,8 +46,8 @@ class LoginPage extends StatelessWidget {
           const SizedBox(height: 50),
           Text(appName,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                  fontWeight: FontWeight.bold, fontSize: 30)),
+              style:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 30)),
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: LoginForm(),
@@ -88,48 +88,33 @@ class _LoginFormState extends State<LoginForm> {
   String? password;
 
   bool _obscureText = true;
+  bool _isSubmitting = false;
 
   // Helper method for user login
   Future<void> loginUser(String email, String password) async {
-    const String apiUrl = "$backend_Url/sign_in";
-
+    setState(() => _isSubmitting = true);
     try {
-      final response = await customHttpClient.post(
-        Uri.parse(apiUrl),
-        headers: {"Content-Type": "application/json"},
-        body: json.encode({"username": email, "password": password}),
-      );
-
-      if (response.statusCode == 200) {
-        final result = json.decode(response.body);
-        user_id = result["user_id"];
-        id_token = result["idToken"];
-
-        // Navigate to the next page upon successful login
-        if (!mounted) return;
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const RouteVolunteerPage()),
-        );
-      } else {
-        final error = json.decode(response.body)["error"];
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-            error ?? "An error occurred. Please try again.",
-            style: const TextStyle(fontSize: 16),
-          ),
-        ));
-      }
-    } catch (e) {
+      await apiClient.signIn(email, password);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(
-          "Error: $e",
-          style: const TextStyle(fontSize: 16),
-        ),
-      ));
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const RouteVolunteerPage()),
+        (_) => false,
+      );
+    } on ApiException catch (error) {
+      _showError(error.message);
+    } catch (_) {
+      _showError('Sign in failed. Please try again.');
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message, style: const TextStyle(fontSize: 16))),
+    );
   }
 
   @override
@@ -201,22 +186,30 @@ class _LoginFormState extends State<LoginForm> {
             height: 54,
             width: 184,
             child: ElevatedButton(
-              onPressed: () {
-                if (_formKey.currentState!.validate()) {
-                  _formKey.currentState!.save();
-                  loginUser(email!, password!);
-                }
-              },
+              onPressed: _isSubmitting
+                  ? null
+                  : () {
+                      if (_formKey.currentState!.validate()) {
+                        _formKey.currentState!.save();
+                        loginUser(email!, password!);
+                      }
+                    },
               style: ElevatedButton.styleFrom(
                 backgroundColor: primaryColor,
                 shape: const RoundedRectangleBorder(
                   borderRadius: BorderRadius.all(Radius.circular(24.0)),
                 ),
               ),
-              child: const Text(
-                'Login',
-                style: TextStyle(fontSize: 24, color: Colors.white),
-              ),
+              child: _isSubmitting
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text(
+                      'Login',
+                      style: TextStyle(fontSize: 24, color: Colors.white),
+                    ),
             ),
           ),
         ],
