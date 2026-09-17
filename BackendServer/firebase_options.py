@@ -7,6 +7,7 @@ production, prefer the platform's application-default identity or a secret manag
 from __future__ import annotations
 
 import datetime
+import json
 import os
 from pathlib import Path
 
@@ -34,7 +35,21 @@ def _initialize_firebase() -> None:
         raise RuntimeError("FIREBASE_STORAGE_BUCKET is required")
 
     credential_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-    if credential_path:
+    credential_json = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+    if credential_path and credential_json:
+        raise RuntimeError(
+            "Configure either GOOGLE_APPLICATION_CREDENTIALS or "
+            "FIREBASE_SERVICE_ACCOUNT_JSON, not both"
+        )
+    if credential_json:
+        try:
+            service_account = json.loads(credential_json)
+        except json.JSONDecodeError as error:
+            raise RuntimeError("FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON") from error
+        if not isinstance(service_account, dict):
+            raise RuntimeError("FIREBASE_SERVICE_ACCOUNT_JSON must contain a JSON object")
+        firebase_credential = credentials.Certificate(service_account)
+    elif credential_path:
         path = Path(credential_path).expanduser()
         if not path.is_file():
             raise RuntimeError(f"Firebase credential file does not exist: {path}")

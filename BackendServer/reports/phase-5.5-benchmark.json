@@ -1,0 +1,270 @@
+{
+  "performance": {
+    "legacy_average_model_load_seconds": 1.2148137000015897,
+    "legacy_average_peak_temp_bytes": 123323650.33333333,
+    "legacy_average_total_seconds": 42.088422499998465,
+    "optimized_average_peak_temp_bytes": 10719203.333333334,
+    "optimized_first_total_seconds": 45.30479489999925,
+    "optimized_initial_model_load_seconds": 0.6357752000003529,
+    "optimized_second_run_model_load_seconds": 0.0,
+    "optimized_warm_total_seconds": 44.60629079999853
+  },
+  "summary": {
+    "detection_matches": 3,
+    "final_prediction_matches": 3,
+    "pose_classification_matches": 3,
+    "trajectory_classification_matches": 3,
+    "trajectory_matches": 3,
+    "videos_tested": 3
+  },
+  "videos": [
+    {
+      "detections": {
+        "legacy_detection_count": 573,
+        "legacy_detection_frames": 436,
+        "match": true,
+        "maximum_confidence_delta": 0.0,
+        "maximum_normalized_box_delta": 0.0,
+        "mismatched_frames": [],
+        "optimized_detection_count": 573,
+        "optimized_detection_frames": 436
+      },
+      "final_result_match": true,
+      "legacy_metrics": {
+        "implementation": "legacy",
+        "jpeg_quality": 95,
+        "model_load_seconds": 1.2908060000008845,
+        "model_reused": false,
+        "model_warmup_seconds": 8.299997716676444e-06,
+        "peak_temp_bytes": 171194342,
+        "total_seconds": 47.09056540000165
+      },
+      "legacy_total_seconds": 56.866747099997156,
+      "optimized_metrics": {
+        "frames": 471,
+        "implementation": "optimized",
+        "jpeg_quality": 95,
+        "model_load_seconds": 0.6357752000003529,
+        "model_reused": false,
+        "peak_temp_bytes": 15757724,
+        "total_seconds": 35.61568999999872
+      },
+      "optimized_result": {
+        "coaching_labels": [
+          {
+            "area": "form",
+            "coaching_goal": "Preserve the currently observed overall pattern.",
+            "code": "form_model_no_issue_detected",
+            "confidence": 0.849,
+            "evidence": {
+              "classification": "good"
+            },
+            "practice": "Repeat the same recording setup to check whether the result remains reproducible.",
+            "severity": "low",
+            "status": "strength"
+          },
+          {
+            "area": "trajectory",
+            "coaching_goal": "Treat this as an overall trajectory flag; the current model does not identify a specific cause.",
+            "code": "trajectory_model_flagged",
+            "confidence": 0.855,
+            "evidence": {
+              "classification": "bad"
+            },
+            "practice": "Use controlled close-range repetitions and record from the same camera position.",
+            "severity": "high",
+            "status": "needs_attention"
+          }
+        ],
+        "form_classification": "good",
+        "form_confidence": 0.849,
+        "metrics": {
+          "frames": 471,
+          "release_frames": 11,
+          "shot_frames": 40
+        },
+        "player_name": null,
+        "similarity_percentage": null,
+        "success": true,
+        "trajectory_classification": "bad",
+        "trajectory_confidence": 0.855
+      },
+      "optimized_total_seconds": 45.30479489999925,
+      "pose_classification_match": true,
+      "trajectory_classification_match": true,
+      "trajectory_match": true,
+      "trajectory_observations": 394,
+      "video": "E:\\Project\\sharp shooter\\github-release\\sharp-shooter\\docs\\demos\\sharp-shooter-demo-1.mp4"
+    },
+    {
+      "detections": {
+        "legacy_detection_count": 485,
+        "legacy_detection_frames": 312,
+        "match": true,
+        "maximum_confidence_delta": 0.0,
+        "maximum_normalized_box_delta": 0.0,
+        "mismatched_frames": [],
+        "optimized_detection_count": 485,
+        "optimized_detection_frames": 312
+      },
+      "final_result_match": true,
+      "legacy_metrics": {
+        "implementation": "legacy",
+        "jpeg_quality": 95,
+        "model_load_seconds": 1.1756701000012981,
+        "model_reused": false,
+        "model_warmup_seconds": 8.400002116104588e-06,
+        "peak_temp_bytes": 138267661,
+        "total_seconds": 35.65052519999881
+      },
+      "legacy_total_seconds": 42.95635100000072,
+      "optimized_metrics": {
+        "frames": 342,
+        "implementation": "optimized",
+        "jpeg_quality": 95,
+        "model_load_seconds": 0.0,
+        "model_reused": true,
+        "peak_temp_bytes": 11856909,
+        "total_seconds": 25.121395300000586
+      },
+      "optimized_result": {
+        "coaching_labels": [
+          {
+            "area": "form",
+            "coaching_goal": "Preserve the currently observed overall pattern.",
+            "code": "form_model_no_issue_detected",
+            "confidence": 0.819,
+            "evidence": {
+              "classification": "good"
+            },
+            "practice": "Repeat the same recording setup to check whether the result remains reproducible.",
+            "severity": "low",
+            "status": "strength"
+          },
+          {
+            "area": "trajectory",
+            "coaching_goal": "Treat this as an overall trajectory flag; the current model does not identify a specific cause.",
+            "code": "trajectory_model_flagged",
+            "confidence": 0.878,
+            "evidence": {
+              "classification": "bad"
+            },
+            "practice": "Use controlled close-range repetitions and record from the same camera position.",
+            "severity": "high",
+            "status": "needs_attention"
+          }
+        ],
+        "form_classification": "good",
+        "form_confidence": 0.819,
+        "metrics": {
+          "frames": 342,
+          "release_frames": 5,
+          "shot_frames": 45
+        },
+        "player_name": null,
+        "similarity_percentage": null,
+        "success": true,
+        "trajectory_classification": "bad",
+        "trajectory_confidence": 0.878
+      },
+      "optimized_total_seconds": 32.437370999999985,
+      "pose_classification_match": true,
+      "trajectory_classification_match": true,
+      "trajectory_match": true,
+      "trajectory_observations": 272,
+      "video": "E:\\Project\\sharp shooter\\github-release\\sharp-shooter\\docs\\demos\\sharp-shooter-demo-2.mp4"
+    },
+    {
+      "detections": {
+        "legacy_detection_count": 433,
+        "legacy_detection_frames": 195,
+        "match": true,
+        "maximum_confidence_delta": 0.0,
+        "maximum_normalized_box_delta": 0.0,
+        "mismatched_frames": [],
+        "optimized_detection_count": 433,
+        "optimized_detection_frames": 195
+      },
+      "final_result_match": true,
+      "legacy_metrics": {
+        "implementation": "legacy",
+        "jpeg_quality": 95,
+        "model_load_seconds": 1.1779650000025867,
+        "model_reused": false,
+        "model_warmup_seconds": 1.1399999493733048e-05,
+        "peak_temp_bytes": 60508948,
+        "total_seconds": 22.36928320000152
+      },
+      "legacy_total_seconds": 26.44216939999751,
+      "optimized_metrics": {
+        "frames": 195,
+        "implementation": "optimized",
+        "jpeg_quality": 95,
+        "model_load_seconds": 0.0,
+        "model_reused": true,
+        "peak_temp_bytes": 4542977,
+        "total_seconds": 14.180228799999895
+      },
+      "optimized_result": {
+        "coaching_labels": [
+          {
+            "area": "form",
+            "coaching_goal": "Preserve the currently observed overall pattern.",
+            "code": "form_model_no_issue_detected",
+            "confidence": 0.884,
+            "evidence": {
+              "classification": "good"
+            },
+            "practice": "Repeat the same recording setup to check whether the result remains reproducible.",
+            "severity": "low",
+            "status": "strength"
+          },
+          {
+            "area": "trajectory",
+            "coaching_goal": "Treat this as an overall trajectory flag; the current model does not identify a specific cause.",
+            "code": "trajectory_model_flagged",
+            "confidence": 0.875,
+            "evidence": {
+              "classification": "bad"
+            },
+            "practice": "Use controlled close-range repetitions and record from the same camera position.",
+            "severity": "high",
+            "status": "needs_attention"
+          }
+        ],
+        "form_classification": "good",
+        "form_confidence": 0.884,
+        "metrics": {
+          "frames": 195,
+          "release_frames": 0,
+          "shot_frames": 7
+        },
+        "player_name": null,
+        "similarity_percentage": null,
+        "success": true,
+        "trajectory_classification": "bad",
+        "trajectory_confidence": 0.875
+      },
+      "optimized_total_seconds": 18.248226100000466,
+      "pose_classification_match": true,
+      "trajectory_classification_match": true,
+      "trajectory_match": true,
+      "trajectory_observations": 194,
+      "video": "E:\\Project\\sharp shooter\\github-release\\sharp-shooter\\docs\\demos\\sharp-shooter-demo-3.mp4"
+    }
+  ],
+  "warm_probe": {
+    "final_result_match": true,
+    "metrics": {
+      "frames": 471,
+      "implementation": "optimized",
+      "jpeg_quality": 95,
+      "model_load_seconds": 0.0,
+      "model_reused": true,
+      "peak_temp_bytes": 15757724,
+      "total_seconds": 34.93046030000187
+    },
+    "total_seconds": 44.60629079999853,
+    "video": "E:\\Project\\sharp shooter\\github-release\\sharp-shooter\\docs\\demos\\sharp-shooter-demo-1.mp4"
+  }
+}

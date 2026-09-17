@@ -1,8 +1,10 @@
 # Lightweight dependencies required by unit tests and feature extraction.
 # Runtime-only Firebase, OpenAI, Ultralytics, and PyTorch packages are excluded
 # so pull-request checks remain fast and do not require credentials or models.
+boto3>=1.35,<2
 joblib>=1.4,<2
-mediapipe>=0.10.18,<0.11
+# Newer MediaPipe wheels removed the legacy `mp.solutions` API used by main.py.
+mediapipe==0.10.21
 numpy>=1.26,<2
 opencv-python-headless>=4.10,<5
 pandas>=2.2,<3

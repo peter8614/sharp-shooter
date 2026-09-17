@@ -30,9 +30,11 @@ Usage - formats:
 
 import argparse
 import csv
+import json
 import os
 import platform
 import sys
+import time
 from pathlib import Path
 
 import torch
@@ -163,7 +165,9 @@ def run(
 
     # Load model
     device = select_device(device)
+    model_load_started = time.perf_counter()
     model = DetectMultiBackend(weights, device=device, dnn=dnn, data=data, fp16=half)
+    model_load_seconds = time.perf_counter() - model_load_started
     stride, names, pt = model.stride, model.names, model.pt
     imgsz = check_img_size(imgsz, s=stride)  # check image size
 
@@ -180,7 +184,24 @@ def run(
     vid_path, vid_writer = [None] * bs, [None] * bs
 
     # Run inference
+    model_warmup_started = time.perf_counter()
     model.warmup(imgsz=(1 if pt or model.triton else bs, 3, *imgsz))  # warmup
+    model_warmup_seconds = time.perf_counter() - model_warmup_started
+    metrics_path = os.getenv("SHARP_SHOOTER_YOLO_METRICS")
+    if metrics_path:
+        metrics_file = Path(metrics_path)
+        metrics_file.parent.mkdir(parents=True, exist_ok=True)
+        metrics_file.write_text(
+            json.dumps(
+                {
+                    "model_load_seconds": model_load_seconds,
+                    "model_warmup_seconds": model_warmup_seconds,
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
     seen, windows, dt = 0, [], (Profile(device=device), Profile(device=device), Profile(device=device))
     for path, im, im0s, vid_cap, s in dataset:
         with dt[0]:
@@ -428,7 +449,8 @@ def main(opt):
         main(opt)
     ```
     """
-    check_requirements(ROOT / "requirements.txt", exclude=("tensorboard", "thop"))
+    if str(os.getenv("YOLOv5_AUTOINSTALL", "true")).lower() != "false":
+        check_requirements(ROOT / "requirements.txt", exclude=("tensorboard", "thop"))
     run(**vars(opt))
 
 

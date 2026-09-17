@@ -10,6 +10,17 @@ python -m venv .venv
 .venv\Scripts\python -m pip install -r requirements.txt
 ```
 
+Production containers install `requirements-production.txt` and run the Flask
+application with Gunicorn. Managed runtimes that cannot mount a credential file
+may inject the complete service-account object through the
+`FIREBASE_SERVICE_ACCOUNT_JSON` secret instead of
+`GOOGLE_APPLICATION_CREDENTIALS`; configure only one of the two.
+
+The checked `Dockerfile` listens on `PORT` (default `8080`) and uses one
+Gunicorn worker so the in-memory job registry remains coherent. The CodeBuild
+spec builds the private deployment source bundle and pushes its image to ECR;
+private classifier bundles belong in that deployment bundle, not in Git.
+
 ## Authentication sessions
 
 `POST /sign_in` and `POST /register` keep their original `idToken` and
@@ -49,6 +60,49 @@ under `output/<video-name>/`. To add a labeled example to the two datasets:
 ```
 
 Use `--arm L` for a left-handed shooter. CUDA users can pass `--device 0`.
+
+## Test inference without Flask
+
+Run the reusable inference core directly from the repository root:
+
+```powershell
+python BackendServer/scripts/test_inference.py docs/demos/sharp-shooter-demo-3.mp4
+```
+
+The command prints a JSON result and does not require Flask, Firebase, or AWS.
+By default it creates an isolated temporary workspace and removes every generated
+frame and artifact when inference finishes. Pass `--work-dir <path>` to retain
+the CSV, trajectory, and annotated-video artifacts for inspection.
+
+The default pipeline keeps YOLOv5 in the Python process so its weights are
+reused by subsequent jobs. Frames are decoded sequentially and pass through an
+in-memory JPEG quality-95 compatibility transform; no per-frame JPEG files are
+written. The original subprocess/disk pipeline remains available for regression
+comparison:
+
+```powershell
+python BackendServer/scripts/test_inference.py docs/demos/sharp-shooter-demo-3.mp4 --pipeline legacy
+python BackendServer/scripts/compare_inference.py
+```
+
+The comparison command tests every `docs/demos/*.mp4` sample and exits non-zero
+if detections, trajectory points, classifications, or final JSON differ.
+
+## AWS asynchronous jobs
+
+The local AWS application layer exposes Lambda-compatible handlers for creating
+an upload job, polling its status, and processing S3 notifications delivered
+through a Standard SQS queue. DynamoDB processing leases recover jobs after a
+timeout or crash, while worker tokens prevent stale invocations from committing
+results. It keeps boto3 access behind reusable service modules and calls the same
+optimized `predict_video()` entry point used above. This phase does not deploy
+resources, and the legacy `/get_prediction` route remains available.
+
+Required runtime settings are `AWS_REGION`, `UPLOAD_BUCKET`, `JOBS_TABLE`,
+`PROCESSING_LEASE_SECONDS`, and `MAX_PROCESSING_ATTEMPTS`.
+See [`docs/aws-async-jobs.md`](../docs/aws-async-jobs.md) for the exact HTTP
+contract, DynamoDB state machine, S3 object layout, duplicate-event behavior,
+and local mock-test commands.
 
 ## Train classifiers
 
