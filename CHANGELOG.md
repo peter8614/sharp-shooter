@@ -1,5 +1,63 @@
 # Changelog
 
+## 2026-09-17 — Inference optimization and AWS migration foundation
+
+### Framework-independent inference
+
+- Extracted the existing prediction flow into a reusable `predict_video()`
+  boundary that can run without Flask and creates isolated temporary workspaces.
+- Kept the legacy `/get_prediction` API as the working fallback while routing it
+  through the shared inference implementation.
+- Added warm-cached classifier bundles and a lazy process-wide YOLO detector so
+  repeated jobs do not reconstruct the models.
+- Moved runtime uploads and generated artifacts outside the source tree and added
+  local inference and compatibility scripts.
+
+### Phase 5.5 performance optimization
+
+- Replaced the default YOLO subprocess and per-frame disk pipeline with
+  sequential decoding, in-memory detection/rendering, and direct annotated-video
+  writing.
+- Preserved the established 640-pixel input, confidence and IoU thresholds, NMS,
+  FP32 behavior, JPEG quality-95 compatibility transform, MediaPipe behavior,
+  classifiers, trajectory output, and final prediction schema.
+- Retained the original implementation as a selectable regression path and
+  added exact detection, trajectory, classification, and final-JSON comparison.
+- Verified all three public demo videos and 1,491 post-NMS detections. Average
+  runtime fell from 42.09 to 32.00 seconds (24.0%), while average temporary disk
+  usage fell from 117.61 MiB to 10.22 MiB (91.3%).
+
+### AWS asynchronous job application layer
+
+- Added Lambda-compatible `POST /jobs` and `GET /jobs/{job_id}` handlers,
+  DynamoDB job persistence, S3 presigned uploads, and a queue-driven inference
+  worker without deploying cloud resources.
+- Derived private object keys from UUIDs and validated MIME types instead of
+  trusting client filenames; no AWS credentials or account IDs are stored in
+  source.
+- Changed the target delivery path to S3 `ObjectCreated` -> Standard SQS queue ->
+  inference Lambda, with one job per invocation and partial-batch failure output.
+- Added processing leases, attempt counts, unique worker tokens, atomic stale
+  lease reclamation, and token-protected completion/failure updates so a timed-out
+  invocation cannot permanently strand or overwrite a job.
+- Added retry release for recoverable exceptions and DLQ-compatible terminal
+  behavior. The documented initial recommendation is three processing attempts
+  with an SQS `maxReceiveCount` of five.
+
+### Deployment preparation and validation
+
+- Added a production Dockerfile, Gunicorn dependency, CodeBuild/ECR build spec,
+  headless OpenCV, pinned runtime-compatible MediaPipe/scikit-learn versions, and
+  support for injecting the Firebase service account as a managed JSON secret.
+- Documented the API contract, S3 key layout, DynamoDB state machine, SQS event
+  envelope, lease timing requirements, DLQ behavior, and remaining infrastructure
+  work.
+- Expanded the complete backend suite from 27 to 65 passing tests, including
+  inference parity, model reuse, DynamoDB lease races, stale-worker protection,
+  SQS/S3 parsing, retry behavior, and DLQ-compatible failures.
+- Verified Python compilation and a clean Git whitespace check. Flutter and the
+  production ML prediction behavior were intentionally left unchanged.
+
 ## 2026-09-15 — Mobile reliability and App Store readiness
 
 ### API compatibility and session lifecycle

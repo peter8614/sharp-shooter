@@ -9,6 +9,7 @@ import logging
 import os
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import uuid
@@ -17,11 +18,10 @@ from functools import wraps
 from pathlib import Path
 
 import cv2
-import pandas as pd
 from flask import Flask, g, jsonify, request
 from werkzeug.utils import secure_filename
 
-from coaching_labels import generate_prediction_labels, prediction_confidence
+from core.inference import predict_video
 from firebase_options import (
     db,
     delete_user_account,
@@ -36,18 +36,19 @@ from firebase_options import (
     update_document,
     verify_user_token,
 )
-from landmark_classification import landmark_predict, load_landmark_model, load_single_landmark_file
 from llm_analysis import create_llm_analysis
-from main import break_down_video
 from NBA_compare import compare_user_to_player
-from trajectory_classification import load_trajectory, load_trajectory_model, trajectory_predict
 
 
 BACKEND_DIR = Path(__file__).resolve().parent
-UPLOAD_ROOT = BACKEND_DIR / "uploads"
-WORK_ROOT = BACKEND_DIR / "server_data"
-LANDMARK_MODEL = BACKEND_DIR / "data/landmark_data/basketball_shot_model.pkl"
-TRAJECTORY_MODEL = BACKEND_DIR / "data/trajectory_data/trajectory_model.pkl"
+RUNTIME_ROOT = Path(
+    os.getenv(
+        "SHARP_SHOOTER_RUNTIME_ROOT",
+        str(Path(tempfile.gettempdir()) / "sharp-shooter"),
+    )
+).expanduser().resolve()
+UPLOAD_ROOT = RUNTIME_ROOT / "uploads"
+WORK_ROOT = RUNTIME_ROOT / "server_data"
 NBA_DATA_DIR = BACKEND_DIR / "NBA Data"
 NBA_VIDEO_DIR = BACKEND_DIR / "NBA Players"
 ALLOWED_EXTENSIONS = {"mp4", "mov", "avi", "mkv"}
@@ -165,57 +166,6 @@ def _convert_to_mp4(input_path: Path, output_path: Path) -> None:
         raise RuntimeError("ffmpeg could not create the processed MP4")
 
 
-def _classification(
-    model_path: Path,
-    loader,
-    feature_loader,
-    predictor,
-    data_path: Path,
-    domain: str,
-) -> dict:
-    """Return a class, confidence, and deterministic coaching labels."""
-    if not model_path.is_file():
-        label = "unavailable"
-        return {
-            "label": label,
-            "confidence": None,
-            "coaching_labels": generate_prediction_labels(
-                domain, label, None, pd.DataFrame()
-            ),
-        }
-    try:
-        bundle = loader(model_path)
-        features = feature_loader(data_path)
-        prediction = predictor(bundle, features)
-        numeric_label = int(prediction[0])
-        label = "good" if numeric_label == 1 else "bad"
-        ordered_features = features[bundle["features"]]
-        confidence = prediction_confidence(
-            bundle["model"], ordered_features, numeric_label
-        )
-        return {
-            "label": label,
-            "confidence": confidence,
-            "coaching_labels": generate_prediction_labels(
-                domain,
-                label,
-                confidence,
-                features,
-                bundle.get("good_form_reference", {}),
-            ),
-        }
-    except (KeyError, ValueError, OSError) as error:
-        logger.warning("Model unavailable: %s", error)
-        label = "unavailable"
-        return {
-            "label": label,
-            "confidence": None,
-            "coaching_labels": generate_prediction_labels(
-                domain, label, None, pd.DataFrame()
-            ),
-        }
-
-
 def _llm_safety_identifier(user_id: str) -> str:
     """Create a stable pseudonym without sending the Firebase UID upstream."""
     salt = os.getenv("SAFETY_IDENTIFIER_SALT")
@@ -228,34 +178,14 @@ def _process_prediction(job_id: str, user_id: str, video_path: Path, work_dir: P
     """Process one isolated upload and publish only artifacts owned by its UID."""
     _set_job(job_id, status="processing")
     try:
-        artifacts = break_down_video(video_path, work_dir, work_dir, clean=True)
-        landmark_path = Path(artifacts["landmarks"])
-        trajectory_path = Path(artifacts["trajectory"])
-        annotated_avi = Path(artifacts["annotated_video"])
+        result = predict_video(video_path, work_dir=work_dir)
+        generated = result["artifacts"]
+        landmark_path = Path(generated["landmarks"])
+        trajectory_path = Path(generated["trajectory"])
+        annotated_avi = Path(generated["annotated_video"])
         processed_mp4 = work_dir / "processed_video.mp4"
-        for required_path in (landmark_path, trajectory_path, annotated_avi):
-            if not required_path.is_file():
-                raise RuntimeError("The analysis pipeline did not produce all required artifacts")
         _convert_to_mp4(annotated_avi, processed_mp4)
-
-        form_result = _classification(
-            LANDMARK_MODEL,
-            load_landmark_model,
-            load_single_landmark_file,
-            landmark_predict,
-            landmark_path,
-            "form",
-        )
-        trajectory_result = _classification(
-            TRAJECTORY_MODEL,
-            load_trajectory_model,
-            load_trajectory,
-            trajectory_predict,
-            trajectory_path,
-            "trajectory",
-        )
-
-        player_name, similarity, player_path = compare_user_to_player(landmark_path, NBA_DATA_DIR, NBA_VIDEO_DIR)
+        player_path = generated["player_recording"]
         artifact_id = uuid.uuid4().hex
         with _user_data_lock(user_id):
             _ensure_account_active(user_id)
@@ -279,15 +209,15 @@ def _process_prediction(job_id: str, user_id: str, video_path: Path, work_dir: P
                 user_id,
                 landmark_storage,
                 trajectory_storage,
-                form_result["label"],
-                trajectory_result["label"],
+                result["form_classification"],
+                result["trajectory_classification"],
                 video_storage,
-                player_name,
-                similarity,
+                result["player_name"],
+                result["similarity_percentage"],
                 player_storage,
-                form_result["confidence"],
-                trajectory_result["confidence"],
-                form_result["coaching_labels"] + trajectory_result["coaching_labels"],
+                result["form_confidence"],
+                result["trajectory_confidence"],
+                result["coaching_labels"],
             )
             _set_job(job_id, status="complete", analysis_id=analysis_id)
     except AccountDeletionInProgress:

@@ -20,6 +20,7 @@ Audio and device metadata were removed before publication. See the
 - Centralized the mobile/backend contract in a typed API client with compatible response parsing, explicit loading/error/empty states, bounded job polling, one-time 401 retry, and single-flight Firebase token refresh.
 - Added an in-app account and privacy area with readable legal documents, sign-out, and complete account deletion across Firebase Authentication, Firestore, Storage, queued jobs, and server scratch files.
 - Built a Flask analysis service that extracts upper-body landmarks with MediaPipe, tracks the basketball with a YOLOv5 detector adapted from the MIT-licensed [basketball-detection](https://github.com/Stardust87/basketball-detection) project, classifies shooting form and trajectory, and returns an H.264 annotated video.
+- Extracted the inference pipeline behind a framework-independent `predict_video()` boundary, kept YOLO warm in-process, and added a locally tested AWS asynchronous job layer with direct S3 uploads, SQS delivery, DynamoDB leases, stale-worker protection, and DLQ-compatible retries.
 - Designed recording-level feature pipelines and versioned model bundles so training and inference share an enforced feature schema.
 - Prevented validation leakage by treating each video as one sample instead of splitting frames from the same recording across training and validation.
 - Added evidence-backed coaching: deterministic local logic selects at most two supported form findings, while the LLM only turns those findings into concise, actionable drills.
@@ -54,16 +55,43 @@ Flask API / bounded job queue
        Firebase Auth / Storage / Firestore
 ```
 
+### AWS migration status
+
+The repository also contains the locally validated application layer for the
+next asynchronous backend. It has not been deployed yet and does not replace the
+working Flask/Flutter path above:
+
+```text
+POST /jobs ──► DynamoDB pending job ──► presigned S3 upload
+                                                │
+                                                ▼
+                                      Standard SQS queue
+                                                │ batch size 1
+                                                ▼
+                                      inference Lambda worker
+                                                │
+                         DynamoDB processing lease / completed result
+                                                │
+                                                ▼
+                                      GET /jobs/{job_id}
+```
+
+Time-limited leases recover jobs after Lambda timeout, OOM, or process failure.
+Worker tokens prevent a delayed invocation from overwriting a reclaimed job,
+and terminal SQS failures remain eligible for redrive to a DLQ. See the
+[AWS asynchronous job design](docs/aws-async-jobs.md) and the
+[Phase 5.5 benchmark](BackendServer/reports/phase-5.5-benchmark.md).
+
 ## Technology
 
 | Area | Technologies and techniques |
 | --- | --- |
 | Mobile | Flutter, Dart, Camera, Chewie, typed API client, token refresh, Android/iOS permissions |
-| Backend | Python, Flask, asynchronous bounded worker pool, REST APIs |
+| Backend | Python, Flask, reusable inference core, Lambda-compatible job APIs and worker |
 | Computer vision | MediaPipe Pose, Ultralytics YOLOv5, a third-party basketball detector, OpenCV, FFmpeg |
 | Machine learning | scikit-learn, Extra Trees, recording-level feature engineering, repeated stratified cross-validation, bootstrap confidence intervals |
 | Generative AI | OpenAI API, evidence-constrained prompting, data minimization, safety identifiers |
-| Cloud and security | Firebase Authentication, Firestore, Cloud Storage, bearer-token verification, isolated job directories |
+| Cloud and security | Firebase Authentication, Firestore, Cloud Storage, AWS S3/SQS/DynamoDB application layer, processing leases, bearer-token verification, isolated job directories |
 | Quality | unittest, Flutter Test, Dart analyzer, GitHub Actions, reproducible Markdown/JSON/CSV evaluation reports |
 
 ## Engineering highlights

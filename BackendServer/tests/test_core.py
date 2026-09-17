@@ -8,9 +8,10 @@ import cv2
 import numpy as np
 
 import landmark_classification
+import pipeline_rendering
 import trajectory_classification
+import video_pipeline
 from main import detect_shooting_motion
-from utils.draw import draw_trajectory
 
 
 def landmark(x, y, visibility=1.0):
@@ -18,6 +19,9 @@ def landmark(x, y, visibility=1.0):
 
 
 class CoreTests(unittest.TestCase):
+    def test_bundled_yolo_detector_path_exists(self):
+        self.assertTrue(video_pipeline.YOLO_DETECT.is_file())
+
     def test_right_arm_release_uses_correct_landmarks(self):
         points = [landmark(0, 0, 0) for _ in range(33)]
         points[12] = landmark(0.5, 0.5)
@@ -83,7 +87,7 @@ class CoreTests(unittest.TestCase):
                     str(images / f"{index:05d}.jpg"),
                     np.zeros((20, 20, 3), dtype=np.uint8),
                 )
-            points = draw_trajectory(labels, images, output)
+            points = pipeline_rendering.draw_trajectory(labels, images, output)
             self.assertEqual(points, [])
             self.assertEqual(len(list(output.glob("*.jpg"))), 3)
 

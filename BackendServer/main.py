@@ -138,6 +138,8 @@ def break_down_video(
     shooting_arm="R",
     device="cpu",
     clean=True,
+    pipeline="optimized",
+    capture_diagnostics=False,
 ):
     """Generate isolated landmark, trajectory, and annotated-video artifacts."""
     video_path = Path(video_path).expanduser().resolve()
@@ -156,6 +158,8 @@ def break_down_video(
         trajectory_dir,
         device=device,
         clean=clean,
+        implementation=pipeline,
+        capture_diagnostics=capture_diagnostics,
     )
     return {
         **pose_result,
