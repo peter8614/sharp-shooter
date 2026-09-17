@@ -8,9 +8,9 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
-import torch
 
 
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -27,19 +27,40 @@ RUNTIME_CACHE.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("YOLO_CONFIG_DIR", str(RUNTIME_CACHE / ".ultralytics"))
 os.environ.setdefault("MPLCONFIGDIR", str(RUNTIME_CACHE / ".matplotlib"))
 
-# The vendored YOLOv5 code uses top-level `models` and `utils` imports.
-if str(YOLO_ROOT) not in sys.path:
-    sys.path.insert(0, str(YOLO_ROOT))
+_runtime = None
+_runtime_lock = threading.Lock()
 
-from models.common import DetectMultiBackend  # noqa: E402
-from utils.augmentations import letterbox  # noqa: E402
-from utils.general import (  # noqa: E402
-    check_img_size,
-    non_max_suppression,
-    scale_boxes,
-    xyxy2xywh,
-)
-from utils.torch_utils import select_device  # noqa: E402
+
+def _get_yolo_runtime():
+    """Import PyTorch and vendored YOLO only when inference is first requested."""
+    global _runtime
+    with _runtime_lock:
+        if _runtime is None:
+            # The vendored YOLOv5 code uses top-level `models` and `utils` imports.
+            if str(YOLO_ROOT) not in sys.path:
+                sys.path.insert(0, str(YOLO_ROOT))
+            import torch
+            from models.common import DetectMultiBackend
+            from utils.augmentations import letterbox
+            from utils.general import (
+                check_img_size,
+                non_max_suppression,
+                scale_boxes,
+                xyxy2xywh,
+            )
+            from utils.torch_utils import select_device
+
+            _runtime = SimpleNamespace(
+                torch=torch,
+                DetectMultiBackend=DetectMultiBackend,
+                letterbox=letterbox,
+                check_img_size=check_img_size,
+                non_max_suppression=non_max_suppression,
+                scale_boxes=scale_boxes,
+                xyxy2xywh=xyxy2xywh,
+                select_device=select_device,
+            )
+    return _runtime
 
 
 class YoloDetector:
@@ -64,10 +85,11 @@ class YoloDetector:
         if not self.weights_path.is_file():
             raise FileNotFoundError(f"Missing basketball weights: {self.weights_path}")
 
+        self._runtime = _get_yolo_runtime()
         started = time.perf_counter()
         self.device_name = str(device)
-        self.device = select_device(self.device_name)
-        self.model = DetectMultiBackend(
+        self.device = self._runtime.select_device(self.device_name)
+        self.model = self._runtime.DetectMultiBackend(
             self.weights_path,
             device=self.device,
             dnn=self.dnn,
@@ -77,21 +99,29 @@ class YoloDetector:
         self.stride = self.model.stride
         self.names = self.model.names
         self.pt = self.model.pt
-        self.image_size = check_img_size(self.image_size, s=self.stride)
+        self.image_size = self._runtime.check_img_size(
+            self.image_size, s=self.stride
+        )
         self.model.warmup(
             imgsz=(1 if self.pt or self.model.triton else 1, 3, *self.image_size)
         )
         self.load_seconds = time.perf_counter() - started
         self._inference_lock = threading.Lock()
 
-    @torch.inference_mode()
     def detect(self, frame: np.ndarray) -> list[dict]:
         """Return post-NMS detections for one BGR frame."""
         if frame is None or frame.ndim != 3 or frame.shape[2] != 3:
             raise ValueError("YOLO input must be one BGR image")
 
+        with self._runtime.torch.inference_mode():
+            return self._detect(frame)
+
+    def _detect(self, frame: np.ndarray) -> list[dict]:
+        """Run one inference while the caller holds PyTorch inference mode."""
+        torch = self._runtime.torch
+
         original = frame
-        image = letterbox(
+        image = self._runtime.letterbox(
             original,
             self.image_size,
             stride=self.stride,
@@ -111,7 +141,7 @@ class YoloDetector:
                 augment=self.augment,
                 visualize=False,
             )
-            prediction = non_max_suppression(
+            prediction = self._runtime.non_max_suppression(
                 prediction,
                 self.confidence_threshold,
                 self.iou_threshold,
@@ -122,7 +152,7 @@ class YoloDetector:
 
         detections = prediction[0]
         if len(detections):
-            detections[:, :4] = scale_boxes(
+            detections[:, :4] = self._runtime.scale_boxes(
                 tensor.shape[2:], detections[:, :4], original.shape
             ).round()
 
@@ -133,7 +163,9 @@ class YoloDetector:
             coordinates = torch.tensor(
                 [float(value.detach().cpu()) for value in xyxy]
             ).view(1, 4)
-            relative = (xyxy2xywh(coordinates) / normalization).view(-1).tolist()
+            relative = (
+                self._runtime.xyxy2xywh(coordinates) / normalization
+            ).view(-1).tolist()
             # Legacy detect.py persisted values with `%g` before trajectory
             # rendering. Reapply that six-significant-digit boundary in memory
             # so integer pixel centers remain bit-for-bit compatible.
