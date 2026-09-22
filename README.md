@@ -21,6 +21,10 @@ Audio and device metadata were removed before publication. See the
 - Added an in-app account and privacy area with readable legal documents, sign-out, and complete account deletion across Firebase Authentication, Firestore, Storage, queued jobs, and server scratch files.
 - Built a Flask analysis service that extracts upper-body landmarks with MediaPipe, tracks the basketball with a YOLOv5 detector adapted from the MIT-licensed [basketball-detection](https://github.com/Stardust87/basketball-detection) project, classifies shooting form and trajectory, and returns an H.264 annotated video.
 - Extracted the inference pipeline behind a framework-independent `predict_video()` boundary, kept YOLO warm in-process, and added a locally tested AWS asynchronous job layer with direct S3 uploads, SQS delivery, DynamoDB leases, stale-worker protection, and DLQ-compatible retries.
+- Added a dedicated x86_64 AWS Lambda worker container with CPU-only PyTorch,
+  build-time model integrity checks, and an automated real-video harness for
+  exact Linux legacy/optimized parity, cross-platform prediction decisions,
+  cold/warm YOLO reuse, image size, memory, and `/tmp` usage.
 - Designed recording-level feature pipelines and versioned model bundles so training and inference share an enforced feature schema.
 - Prevented validation leakage by treating each video as one sample instead of splitting frames from the same recording across training and validation.
 - Added evidence-backed coaching: deterministic local logic selects at most two supported form findings, while the LLM only turns those findings into concise, actionable drills.
@@ -80,7 +84,9 @@ Time-limited leases recover jobs after Lambda timeout, OOM, or process failure.
 Worker tokens prevent a delayed invocation from overwriting a reclaimed job,
 and terminal SQS failures remain eligible for redrive to a DLQ. See the
 [AWS asynchronous job design](docs/aws-async-jobs.md) and the
-[Phase 5.5 benchmark](BackendServer/reports/phase-5.5-benchmark.md).
+[Phase 5.5 benchmark](BackendServer/reports/phase-5.5-benchmark.md). The worker
+container and no-deployment local validation procedure are documented in the
+[Phase 7 Lambda container guide](docs/lambda-container.md).
 
 ## Technology
 

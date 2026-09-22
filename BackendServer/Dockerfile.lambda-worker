@@ -1,0 +1,44 @@
+# syntax=docker/dockerfile:1.7
+# Phase 7 deliberately targets the Lambda x86_64 runtime. Build with:
+# docker buildx build --platform linux/amd64 -f Dockerfile.lambda-worker .
+FROM public.ecr.aws/lambda/python:3.12
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    YOLOv5_AUTOINSTALL=false \
+    YOLO_CONFIG_DIR=/tmp/sharp-shooter-runtime/.ultralytics \
+    MPLCONFIGDIR=/tmp/sharp-shooter-runtime/.matplotlib \
+    XDG_CACHE_HOME=/tmp/sharp-shooter-runtime/.cache \
+    TORCH_HOME=/tmp/sharp-shooter-runtime/.torch
+
+# OpenCV and MediaPipe require these shared libraries. The optimized inference
+# path uses the codecs bundled with the OpenCV wheel and does not shell out to
+# ffmpeg.
+RUN dnf install -y glib2 libgomp mesa-libGL \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf
+
+COPY requirements-lambda-worker.txt ${LAMBDA_TASK_ROOT}/
+
+# Keep the image CPU-only. Ultralytics is installed without dependencies so it
+# cannot replace opencv-python-headless with the GUI wheel or pull CUDA packages.
+RUN python -m pip install --no-cache-dir --no-compile --only-binary=:all: \
+        -r ${LAMBDA_TASK_ROOT}/requirements-lambda-worker.txt \
+    && python -m pip install --no-cache-dir --no-compile --only-binary=:all: \
+        --index-url https://download.pytorch.org/whl/cpu \
+        --extra-index-url https://pypi.org/simple \
+        torch==2.4.1+cpu torchvision==0.19.1+cpu \
+    && python -m pip install --no-cache-dir --no-compile --only-binary=:all: --no-deps \
+        mediapipe==0.10.21 ultralytics==8.4.154 ultralytics-thop==2.1.6 \
+        ultralytics-platform==0.1.46 \
+    && python -c "import cv2, mediapipe, sklearn, torch, ultralytics; assert mediapipe.solutions.pose; print('runtime imports verified')" \
+    && python -c "from pathlib import Path; import shutil; roots=(Path('${LAMBDA_TASK_ROOT}'), Path('/var/lang/lib/python3.12/site-packages')); paths=[p for root in roots for p in root.rglob('*') if p.is_dir() and p.name in ('tests', '__pycache__')]; [shutil.rmtree(p, ignore_errors=True) for p in paths]"
+
+COPY . ${LAMBDA_TASK_ROOT}/
+
+# Classifier bundles are intentionally ignored by Git. A deployment build must
+# stage the trusted files first; this check makes missing or altered models fatal.
+RUN python ${LAMBDA_TASK_ROOT}/scripts/verify_lambda_assets.py \
+        --root ${LAMBDA_TASK_ROOT}
+
+CMD ["inference_worker.lambda_handler"]

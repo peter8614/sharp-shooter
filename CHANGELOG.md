@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-09-18–22 — Phase 7 Lambda inference container
+
+- Added a dedicated AWS Lambda Python 3.12 / Amazon Linux 2023 `linux/amd64`
+  inference-worker image; the newer base preserves the existing MediaPipe
+  0.10.21 Linux wheel requirement while preserving the existing Flask/Gunicorn
+  image and SQS production handler.
+- Pinned CPU-only PyTorch/torchvision and the Phase 5.5-compatible MediaPipe,
+  OpenCV, scikit-learn, and Ultralytics runtime; excluded unused CUDA, JAX,
+  audio, and GUI OpenCV dependencies from the worker image.
+- Added a build-failing manifest check for the bundled YOLO checkpoint and two
+  private classifier bundles. The classifiers remain ignored by Git and are
+  staged only from a trusted local deployment source.
+- Added an opt-in local Lambda Runtime Interface Emulator handler and runner for
+  all real demo videos, exact Linux legacy/optimized parity, repeated warm invocation,
+  YOLO singleton reuse, image size, dependency versions, inference time, peak
+  RSS, and per-job `/tmp` use.
+- Added container/asset contract tests and a complete local runbook. No AWS
+  resource, Flutter code, prediction setting, model, or result schema changed.
+- Local `linux/amd64` image built and ran all three real demo videos on
+  2026-09-22. Linux legacy/optimized results matched exactly, the repeated
+  call reused YOLO, and cross-platform classification/coaching decisions
+  matched. Windows/Linux MediaPipe tracking produced numeric shot/release and
+  form-confidence differences, documented in the validation report.
+
 ## 2026-09-17 — Inference optimization and AWS migration foundation
 
 ### Framework-independent inference

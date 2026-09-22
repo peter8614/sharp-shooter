@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "assets": [
+    {
+      "path": "models/yolov5s_basketball.pt",
+      "size_bytes": 14745922,
+      "sha256": "d3f34f56ff85160b185f3995ab807ee74d8fb752c1558e1f33f3d3b24a9a16d4",
+      "distribution": "tracked"
+    },
+    {
+      "path": "data/landmark_data/basketball_shot_model.pkl",
+      "size_bytes": 896910,
+      "sha256": "07a502a6ae13cb1e26fded2d8330e6afb3622ed80565f760facbb9383d6c20a9",
+      "distribution": "private"
+    },
+    {
+      "path": "data/trajectory_data/trajectory_model.pkl",
+      "size_bytes": 208484,
+      "sha256": "44bae17c298b48df4afda09d250b092e58f71cd5613bf1377876f1090ef5de50",
+      "distribution": "private"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+# Runtime-only dependencies for the inference Lambda image. PyTorch and the
+# binary MediaPipe/Ultralytics packages are pinned separately in the Dockerfile
+# with --no-deps. That avoids unused JAX, audio, GUI OpenCV, and CUDA packages.
+absl-py>=2,<3
+attrs>=19.1,<26
+boto3>=1.35,<2
+cloudpickle==3.1.1
+filelock>=3.16.1,<4
+flatbuffers>=2,<26
+GitPython>=3.1.30,<4
+httpx>=0.28,<1
+joblib>=1.4,<2
+matplotlib>=3.9,<4
+nvidia-ml-py>=12,<14
+numpy>=1.26,<2
+opencv-python-headless==4.11.0.86
+pandas>=2.2,<3
+Pillow>=11,<12
+polars>=0.20,<2
+protobuf>=4.25.3,<5
+psutil>=6,<8
+py-cpuinfo>=9,<10
+PyYAML>=6,<7
+requests>=2.32,<3
+scikit-learn==1.6.1
+scipy==1.15.3
+seaborn>=0.13,<1
+setuptools<81
+tqdm>=4.67,<5

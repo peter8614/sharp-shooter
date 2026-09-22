@@ -1,0 +1,532 @@
+{
+  "phase": 7,
+  "generated_at": "2026-09-22T19:34:02.596804+00:00",
+  "image": {
+    "id": "sha256:d1fd273032e222c40997d459410773406e2ad0d25e30e21e9292f73b3d855724",
+    "platform": "amd64/linux",
+    "size_bytes": 3097316419,
+    "size_mib": 2953.83
+  },
+  "videos": 3,
+  "warm_model_reuse_verified": true,
+  "cross_platform_exact_matches": 0,
+  "invocations": [
+    {
+      "video": "sharp-shooter-demo-1.mp4",
+      "video_sha256": "79502a6903c89e20f626b589fac662b38f5af9fe5b3d67d33f70403d5168984a",
+      "prediction_matches_windows_phase_5_5_exactly": false,
+      "cross_platform_semantic_match": true,
+      "linux_legacy_matches_optimized_exactly": true,
+      "runtime": {
+        "architecture": "x86_64",
+        "pipeline": "optimized",
+        "python": "3.12.14",
+        "torch": "2.4.1+cpu",
+        "torchvision": "0.19.1+cpu",
+        "mediapipe": "0.10.21",
+        "opencv": "4.11.0.86",
+        "scikit_learn": "1.6.1",
+        "invocation_number": 1,
+        "cold_start": true,
+        "detector_cached_before": false,
+        "detector_cached_after": true,
+        "model_reused": false,
+        "elapsed_seconds": 60.336052,
+        "module_import_seconds": 4.036869,
+        "rss_before_bytes": 234745856,
+        "rss_after_bytes": 732540928,
+        "peak_rss_bytes": 786673664,
+        "temporary_job_bytes": 19053722,
+        "tmp_free_bytes_after_cleanup": 57757306880,
+        "client_roundtrip_seconds": 64.448131
+      },
+      "legacy_runtime": {
+        "architecture": "x86_64",
+        "pipeline": "legacy",
+        "python": "3.12.14",
+        "torch": "2.4.1+cpu",
+        "torchvision": "0.19.1+cpu",
+        "mediapipe": "0.10.21",
+        "opencv": "4.11.0.86",
+        "scikit_learn": "1.6.1",
+        "invocation_number": 2,
+        "cold_start": false,
+        "detector_cached_before": true,
+        "detector_cached_after": true,
+        "model_reused": true,
+        "elapsed_seconds": 73.851952,
+        "module_import_seconds": 4.036869,
+        "rss_before_bytes": 732540928,
+        "rss_after_bytes": 211271680,
+        "peak_rss_bytes": 847892480,
+        "temporary_job_bytes": 19049029,
+        "tmp_free_bytes_after_cleanup": 57757122560,
+        "client_roundtrip_seconds": 73.95612
+      },
+      "expected_result": {
+        "success": true,
+        "form_classification": "good",
+        "trajectory_classification": "bad",
+        "form_confidence": 0.849,
+        "trajectory_confidence": 0.855,
+        "coaching_labels": [
+          {
+            "code": "form_model_no_issue_detected",
+            "status": "strength",
+            "area": "form",
+            "confidence": 0.849,
+            "severity": "low",
+            "evidence": {
+              "classification": "good"
+            },
+            "coaching_goal": "Preserve the currently observed overall pattern.",
+            "practice": "Repeat the same recording setup to check whether the result remains reproducible."
+          },
+          {
+            "code": "trajectory_model_flagged",
+            "status": "needs_attention",
+            "area": "trajectory",
+            "confidence": 0.855,
+            "severity": "high",
+            "evidence": {
+              "classification": "bad"
+            },
+            "coaching_goal": "Treat this as an overall trajectory flag; the current model does not identify a specific cause.",
+            "practice": "Use controlled close-range repetitions and record from the same camera position."
+          }
+        ],
+        "player_name": null,
+        "similarity_percentage": null,
+        "metrics": {
+          "frames": 471,
+          "shot_frames": 40,
+          "release_frames": 11
+        }
+      },
+      "actual_result": {
+        "success": true,
+        "form_classification": "good",
+        "trajectory_classification": "bad",
+        "form_confidence": 0.845,
+        "trajectory_confidence": 0.855,
+        "coaching_labels": [
+          {
+            "code": "form_model_no_issue_detected",
+            "status": "strength",
+            "area": "form",
+            "confidence": 0.845,
+            "severity": "low",
+            "evidence": {
+              "classification": "good"
+            },
+            "coaching_goal": "Preserve the currently observed overall pattern.",
+            "practice": "Repeat the same recording setup to check whether the result remains reproducible."
+          },
+          {
+            "code": "trajectory_model_flagged",
+            "status": "needs_attention",
+            "area": "trajectory",
+            "confidence": 0.855,
+            "severity": "high",
+            "evidence": {
+              "classification": "bad"
+            },
+            "coaching_goal": "Treat this as an overall trajectory flag; the current model does not identify a specific cause.",
+            "practice": "Use controlled close-range repetitions and record from the same camera position."
+          }
+        ],
+        "player_name": null,
+        "similarity_percentage": null,
+        "metrics": {
+          "frames": 471,
+          "shot_frames": 34,
+          "release_frames": 8
+        }
+      }
+    },
+    {
+      "video": "sharp-shooter-demo-2.mp4",
+      "video_sha256": "7a7843f38d4407cbe8a36e7077c030b627a607a185a070147aa1664a9d4721b0",
+      "prediction_matches_windows_phase_5_5_exactly": false,
+      "cross_platform_semantic_match": true,
+      "linux_legacy_matches_optimized_exactly": true,
+      "runtime": {
+        "architecture": "x86_64",
+        "pipeline": "optimized",
+        "python": "3.12.14",
+        "torch": "2.4.1+cpu",
+        "torchvision": "0.19.1+cpu",
+        "mediapipe": "0.10.21",
+        "opencv": "4.11.0.86",
+        "scikit_learn": "1.6.1",
+        "invocation_number": 3,
+        "cold_start": false,
+        "detector_cached_before": true,
+        "detector_cached_after": true,
+        "model_reused": true,
+        "elapsed_seconds": 42.958485,
+        "module_import_seconds": 4.036869,
+        "rss_before_bytes": 213032960,
+        "rss_after_bytes": 393256960,
+        "peak_rss_bytes": 847892480,
+        "temporary_job_bytes": 14611919,
+        "tmp_free_bytes_after_cleanup": 57757122560,
+        "client_roundtrip_seconds": 43.048045
+      },
+      "legacy_runtime": {
+        "architecture": "x86_64",
+        "pipeline": "legacy",
+        "python": "3.12.14",
+        "torch": "2.4.1+cpu",
+        "torchvision": "0.19.1+cpu",
+        "mediapipe": "0.10.21",
+        "opencv": "4.11.0.86",
+        "scikit_learn": "1.6.1",
+        "invocation_number": 4,
+        "cold_start": false,
+        "detector_cached_before": true,
+        "detector_cached_after": true,
+        "model_reused": true,
+        "elapsed_seconds": 54.041944,
+        "module_import_seconds": 4.036869,
+        "rss_before_bytes": 393277440,
+        "rss_after_bytes": 391671808,
+        "peak_rss_bytes": 847892480,
+        "temporary_job_bytes": 14601293,
+        "tmp_free_bytes_after_cleanup": 57756987392,
+        "client_roundtrip_seconds": 54.056031
+      },
+      "expected_result": {
+        "success": true,
+        "form_classification": "good",
+        "trajectory_classification": "bad",
+        "form_confidence": 0.819,
+        "trajectory_confidence": 0.878,
+        "coaching_labels": [
+          {
+            "code": "form_model_no_issue_detected",
+            "status": "strength",
+            "area": "form",
+            "confidence": 0.819,
+            "severity": "low",
+            "evidence": {
+              "classification": "good"
+            },
+            "coaching_goal": "Preserve the currently observed overall pattern.",
+            "practice": "Repeat the same recording setup to check whether the result remains reproducible."
+          },
+          {
+            "code": "trajectory_model_flagged",
+            "status": "needs_attention",
+            "area": "trajectory",
+            "confidence": 0.878,
+            "severity": "high",
+            "evidence": {
+              "classification": "bad"
+            },
+            "coaching_goal": "Treat this as an overall trajectory flag; the current model does not identify a specific cause.",
+            "practice": "Use controlled close-range repetitions and record from the same camera position."
+          }
+        ],
+        "player_name": null,
+        "similarity_percentage": null,
+        "metrics": {
+          "frames": 342,
+          "shot_frames": 45,
+          "release_frames": 5
+        }
+      },
+      "actual_result": {
+        "success": true,
+        "form_classification": "good",
+        "trajectory_classification": "bad",
+        "form_confidence": 0.797,
+        "trajectory_confidence": 0.878,
+        "coaching_labels": [
+          {
+            "code": "form_model_no_issue_detected",
+            "status": "strength",
+            "area": "form",
+            "confidence": 0.797,
+            "severity": "low",
+            "evidence": {
+              "classification": "good"
+            },
+            "coaching_goal": "Preserve the currently observed overall pattern.",
+            "practice": "Repeat the same recording setup to check whether the result remains reproducible."
+          },
+          {
+            "code": "trajectory_model_flagged",
+            "status": "needs_attention",
+            "area": "trajectory",
+            "confidence": 0.878,
+            "severity": "high",
+            "evidence": {
+              "classification": "bad"
+            },
+            "coaching_goal": "Treat this as an overall trajectory flag; the current model does not identify a specific cause.",
+            "practice": "Use controlled close-range repetitions and record from the same camera position."
+          }
+        ],
+        "player_name": null,
+        "similarity_percentage": null,
+        "metrics": {
+          "frames": 342,
+          "shot_frames": 42,
+          "release_frames": 6
+        }
+      }
+    },
+    {
+      "video": "sharp-shooter-demo-3.mp4",
+      "video_sha256": "f020740d42c5530fdfb97dab02265a1c6a4d21ddfd2e995b8c822744b8dd1cda",
+      "prediction_matches_windows_phase_5_5_exactly": false,
+      "cross_platform_semantic_match": true,
+      "linux_legacy_matches_optimized_exactly": true,
+      "runtime": {
+        "architecture": "x86_64",
+        "pipeline": "optimized",
+        "python": "3.12.14",
+        "torch": "2.4.1+cpu",
+        "torchvision": "0.19.1+cpu",
+        "mediapipe": "0.10.21",
+        "opencv": "4.11.0.86",
+        "scikit_learn": "1.6.1",
+        "invocation_number": 5,
+        "cold_start": false,
+        "detector_cached_before": true,
+        "detector_cached_after": true,
+        "model_reused": true,
+        "elapsed_seconds": 22.768113,
+        "module_import_seconds": 4.036869,
+        "rss_before_bytes": 392089600,
+        "rss_after_bytes": 426721280,
+        "peak_rss_bytes": 847892480,
+        "temporary_job_bytes": 5299399,
+        "tmp_free_bytes_after_cleanup": 57756987392,
+        "client_roundtrip_seconds": 22.774564
+      },
+      "legacy_runtime": {
+        "architecture": "x86_64",
+        "pipeline": "legacy",
+        "python": "3.12.14",
+        "torch": "2.4.1+cpu",
+        "torchvision": "0.19.1+cpu",
+        "mediapipe": "0.10.21",
+        "opencv": "4.11.0.86",
+        "scikit_learn": "1.6.1",
+        "invocation_number": 6,
+        "cold_start": false,
+        "detector_cached_before": true,
+        "detector_cached_after": true,
+        "model_reused": true,
+        "elapsed_seconds": 32.774665,
+        "module_import_seconds": 4.036869,
+        "rss_before_bytes": 426725376,
+        "rss_after_bytes": 525443072,
+        "peak_rss_bytes": 847892480,
+        "temporary_job_bytes": 5319585,
+        "tmp_free_bytes_after_cleanup": 57756909568,
+        "client_roundtrip_seconds": 32.797336
+      },
+      "expected_result": {
+        "success": true,
+        "form_classification": "good",
+        "trajectory_classification": "bad",
+        "form_confidence": 0.884,
+        "trajectory_confidence": 0.875,
+        "coaching_labels": [
+          {
+            "code": "form_model_no_issue_detected",
+            "status": "strength",
+            "area": "form",
+            "confidence": 0.884,
+            "severity": "low",
+            "evidence": {
+              "classification": "good"
+            },
+            "coaching_goal": "Preserve the currently observed overall pattern.",
+            "practice": "Repeat the same recording setup to check whether the result remains reproducible."
+          },
+          {
+            "code": "trajectory_model_flagged",
+            "status": "needs_attention",
+            "area": "trajectory",
+            "confidence": 0.875,
+            "severity": "high",
+            "evidence": {
+              "classification": "bad"
+            },
+            "coaching_goal": "Treat this as an overall trajectory flag; the current model does not identify a specific cause.",
+            "practice": "Use controlled close-range repetitions and record from the same camera position."
+          }
+        ],
+        "player_name": null,
+        "similarity_percentage": null,
+        "metrics": {
+          "frames": 195,
+          "shot_frames": 7,
+          "release_frames": 0
+        }
+      },
+      "actual_result": {
+        "success": true,
+        "form_classification": "good",
+        "trajectory_classification": "bad",
+        "form_confidence": 0.883,
+        "trajectory_confidence": 0.875,
+        "coaching_labels": [
+          {
+            "code": "form_model_no_issue_detected",
+            "status": "strength",
+            "area": "form",
+            "confidence": 0.883,
+            "severity": "low",
+            "evidence": {
+              "classification": "good"
+            },
+            "coaching_goal": "Preserve the currently observed overall pattern.",
+            "practice": "Repeat the same recording setup to check whether the result remains reproducible."
+          },
+          {
+            "code": "trajectory_model_flagged",
+            "status": "needs_attention",
+            "area": "trajectory",
+            "confidence": 0.875,
+            "severity": "high",
+            "evidence": {
+              "classification": "bad"
+            },
+            "coaching_goal": "Treat this as an overall trajectory flag; the current model does not identify a specific cause.",
+            "practice": "Use controlled close-range repetitions and record from the same camera position."
+          }
+        ],
+        "player_name": null,
+        "similarity_percentage": null,
+        "metrics": {
+          "frames": 195,
+          "shot_frames": 6,
+          "release_frames": 0
+        }
+      }
+    },
+    {
+      "video": "sharp-shooter-demo-1.mp4",
+      "purpose": "warm-runtime-reuse",
+      "prediction_matches_windows_phase_5_5_exactly": false,
+      "cross_platform_semantic_match": true,
+      "linux_cold_warm_result_match": true,
+      "runtime": {
+        "architecture": "x86_64",
+        "pipeline": "optimized",
+        "python": "3.12.14",
+        "torch": "2.4.1+cpu",
+        "torchvision": "0.19.1+cpu",
+        "mediapipe": "0.10.21",
+        "opencv": "4.11.0.86",
+        "scikit_learn": "1.6.1",
+        "invocation_number": 7,
+        "cold_start": false,
+        "detector_cached_before": true,
+        "detector_cached_after": true,
+        "model_reused": true,
+        "elapsed_seconds": 55.704514,
+        "module_import_seconds": 4.036869,
+        "rss_before_bytes": 525443072,
+        "rss_after_bytes": 589606912,
+        "peak_rss_bytes": 847892480,
+        "temporary_job_bytes": 19053704,
+        "tmp_free_bytes_after_cleanup": 57756909568,
+        "client_roundtrip_seconds": 55.70993
+      },
+      "expected_result": {
+        "success": true,
+        "form_classification": "good",
+        "trajectory_classification": "bad",
+        "form_confidence": 0.849,
+        "trajectory_confidence": 0.855,
+        "coaching_labels": [
+          {
+            "code": "form_model_no_issue_detected",
+            "status": "strength",
+            "area": "form",
+            "confidence": 0.849,
+            "severity": "low",
+            "evidence": {
+              "classification": "good"
+            },
+            "coaching_goal": "Preserve the currently observed overall pattern.",
+            "practice": "Repeat the same recording setup to check whether the result remains reproducible."
+          },
+          {
+            "code": "trajectory_model_flagged",
+            "status": "needs_attention",
+            "area": "trajectory",
+            "confidence": 0.855,
+            "severity": "high",
+            "evidence": {
+              "classification": "bad"
+            },
+            "coaching_goal": "Treat this as an overall trajectory flag; the current model does not identify a specific cause.",
+            "practice": "Use controlled close-range repetitions and record from the same camera position."
+          }
+        ],
+        "player_name": null,
+        "similarity_percentage": null,
+        "metrics": {
+          "frames": 471,
+          "shot_frames": 40,
+          "release_frames": 11
+        }
+      },
+      "actual_result": {
+        "success": true,
+        "form_classification": "good",
+        "trajectory_classification": "bad",
+        "form_confidence": 0.845,
+        "trajectory_confidence": 0.855,
+        "coaching_labels": [
+          {
+            "code": "form_model_no_issue_detected",
+            "status": "strength",
+            "area": "form",
+            "confidence": 0.845,
+            "severity": "low",
+            "evidence": {
+              "classification": "good"
+            },
+            "coaching_goal": "Preserve the currently observed overall pattern.",
+            "practice": "Repeat the same recording setup to check whether the result remains reproducible."
+          },
+          {
+            "code": "trajectory_model_flagged",
+            "status": "needs_attention",
+            "area": "trajectory",
+            "confidence": 0.855,
+            "severity": "high",
+            "evidence": {
+              "classification": "bad"
+            },
+            "coaching_goal": "Treat this as an overall trajectory flag; the current model does not identify a specific cause.",
+            "practice": "Use controlled close-range repetitions and record from the same camera position."
+          }
+        ],
+        "player_name": null,
+        "similarity_percentage": null,
+        "metrics": {
+          "frames": 471,
+          "shot_frames": 34,
+          "release_frames": 8
+        }
+      }
+    }
+  ],
+  "compatibility_notes": [
+    "Windows/Linux numeric difference: sharp-shooter-demo-1.mp4",
+    "Windows/Linux numeric difference: sharp-shooter-demo-2.mp4",
+    "Windows/Linux numeric difference: sharp-shooter-demo-3.mp4",
+    "Windows/Linux numeric difference on warm run: sharp-shooter-demo-1.mp4"
+  ],
+  "failures": [],
+  "passed": true
+}
