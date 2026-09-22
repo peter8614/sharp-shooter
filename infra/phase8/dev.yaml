@@ -1,0 +1,445 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Sharp Shooter minimal, IAM-protected AWS Dev inference environment.
+
+Parameters:
+  InferenceImageUri:
+    Type: String
+  ApiCodeBucket:
+    Type: String
+  ApiCodeKey:
+    Type: String
+  WorkerTimeoutSeconds:
+    Type: Number
+    Default: 300
+    MinValue: 30
+    MaxValue: 900
+  WorkerMemoryMb:
+    Type: Number
+    Default: 3008
+    MinValue: 1024
+    MaxValue: 10240
+  QueueVisibilitySeconds:
+    Type: Number
+    Default: 1800
+    MinValue: 180
+    MaxValue: 43200
+  ProcessingLeaseSeconds:
+    Type: Number
+    Default: 360
+    MinValue: 31
+  MaxProcessingAttempts:
+    Type: Number
+    Default: 3
+    MinValue: 1
+    MaxValue: 10
+
+Resources:
+  InferenceDlq:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: sharp-shooter-dev-inference-dlq
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+      Tags:
+        - Key: Project
+          Value: sharp-shooter
+        - Key: Environment
+          Value: dev
+
+  InferenceQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: sharp-shooter-dev-inference
+      VisibilityTimeout: !Ref QueueVisibilitySeconds
+      MessageRetentionPeriod: 345600
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt InferenceDlq.Arn
+        maxReceiveCount: 5
+      Tags:
+        - Key: Project
+          Value: sharp-shooter
+        - Key: Environment
+          Value: dev
+
+  UploadQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref InferenceQueue
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowOnlyThisBucketToSend
+            Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt InferenceQueue.Arn
+            Condition:
+              ArnEquals:
+                'aws:SourceArn': !Sub 'arn:${AWS::Partition}:s3:::sharp-shooter-dev-uploads-${AWS::AccountId}-${AWS::Region}'
+              StringEquals:
+                'aws:SourceAccount': !Ref AWS::AccountId
+
+  UploadBucket:
+    Type: AWS::S3::Bucket
+    DependsOn: UploadQueuePolicy
+    Properties:
+      BucketName: !Sub 'sharp-shooter-dev-uploads-${AWS::AccountId}-${AWS::Region}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-uploaded-videos
+            Prefix: uploads/
+            Status: Enabled
+            ExpirationInDays: 2
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      NotificationConfiguration:
+        QueueConfigurations:
+          - Event: s3:ObjectCreated:*
+            Queue: !GetAtt InferenceQueue.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: uploads/
+      Tags:
+        - Key: Project
+          Value: sharp-shooter
+        - Key: Environment
+          Value: dev
+
+  UploadBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref UploadBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt UploadBucket.Arn
+              - !Sub '${UploadBucket.Arn}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': false
+
+  JobsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: sharp-shooter-dev-jobs
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: job_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: job_id
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: sharp-shooter
+        - Key: Environment
+          Value: dev
+
+  WorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/sharp-shooter-dev-inference
+      RetentionInDays: 14
+
+  CreateLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/sharp-shooter-dev-create-job
+      RetentionInDays: 14
+
+  GetLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/sharp-shooter-dev-get-job
+      RetentionInDays: 14
+
+  WorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: sharp-shooter-dev-inference
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: inference-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub '${UploadBucket.Arn}/uploads/*'
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt JobsTable.Arn
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt InferenceQueue.Arn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/sharp-shooter-dev-inference:*'
+
+  CreateRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: sharp-shooter-dev-create-job
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: create-job-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub '${UploadBucket.Arn}/uploads/*'
+              - Effect: Allow
+                Action: dynamodb:PutItem
+                Resource: !GetAtt JobsTable.Arn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/sharp-shooter-dev-create-job:*'
+
+  GetRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: sharp-shooter-dev-get-job
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: get-job-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: dynamodb:GetItem
+                Resource: !GetAtt JobsTable.Arn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/sharp-shooter-dev-get-job:*'
+
+  WorkerFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: WorkerLogGroup
+    Properties:
+      FunctionName: sharp-shooter-dev-inference
+      PackageType: Image
+      Architectures:
+        - x86_64
+      Code:
+        ImageUri: !Ref InferenceImageUri
+      Role: !GetAtt WorkerRole.Arn
+      Timeout: !Ref WorkerTimeoutSeconds
+      MemorySize: !Ref WorkerMemoryMb
+      EphemeralStorage:
+        Size: 512
+      ReservedConcurrentExecutions: 2
+      Environment:
+        Variables:
+          UPLOAD_BUCKET: !Ref UploadBucket
+          JOBS_TABLE: !Ref JobsTable
+          PROCESSING_LEASE_SECONDS: !Ref ProcessingLeaseSeconds
+          MAX_PROCESSING_ATTEMPTS: !Ref MaxProcessingAttempts
+      Tags:
+        - Key: Project
+          Value: sharp-shooter
+        - Key: Environment
+          Value: dev
+
+  CreateFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: CreateLogGroup
+    Properties:
+      FunctionName: sharp-shooter-dev-create-job
+      Runtime: python3.12
+      Handler: job_api.create_job.lambda_handler
+      Code:
+        S3Bucket: !Ref ApiCodeBucket
+        S3Key: !Ref ApiCodeKey
+      Role: !GetAtt CreateRole.Arn
+      Timeout: 10
+      MemorySize: 128
+      Environment:
+        Variables:
+          UPLOAD_BUCKET: !Ref UploadBucket
+          JOBS_TABLE: !Ref JobsTable
+
+  GetFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: GetLogGroup
+    Properties:
+      FunctionName: sharp-shooter-dev-get-job
+      Runtime: python3.12
+      Handler: job_api.get_job.lambda_handler
+      Code:
+        S3Bucket: !Ref ApiCodeBucket
+        S3Key: !Ref ApiCodeKey
+      Role: !GetAtt GetRole.Arn
+      Timeout: 10
+      MemorySize: 128
+      Environment:
+        Variables:
+          JOBS_TABLE: !Ref JobsTable
+
+  WorkerEventSource:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt InferenceQueue.Arn
+      FunctionName: !Ref WorkerFunction
+      BatchSize: 1
+      FunctionResponseTypes:
+        - ReportBatchItemFailures
+      ScalingConfig:
+        MaximumConcurrency: 2
+      Enabled: true
+
+  JobsApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: sharp-shooter-dev-jobs
+      ProtocolType: HTTP
+      DisableExecuteApiEndpoint: false
+
+  CreateIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref JobsApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt CreateFunction.Arn
+      PayloadFormatVersion: '2.0'
+
+  GetIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref JobsApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt GetFunction.Arn
+      PayloadFormatVersion: '2.0'
+
+  CreateRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref JobsApi
+      RouteKey: 'POST /jobs'
+      AuthorizationType: AWS_IAM
+      Target: !Join
+        - /
+        - - integrations
+          - !Ref CreateIntegration
+
+  GetRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref JobsApi
+      RouteKey: 'GET /jobs/{job_id}'
+      AuthorizationType: AWS_IAM
+      Target: !Join
+        - /
+        - - integrations
+          - !Ref GetIntegration
+
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref JobsApi
+      StageName: '$default'
+      AutoDeploy: true
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 5
+        ThrottlingRateLimit: 2
+
+  CreateInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref CreateFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${JobsApi}/*/POST/jobs'
+
+  GetInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref GetFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${JobsApi}/*/GET/jobs/*'
+
+  DlqVisibleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: sharp-shooter-dev-inference-dlq-visible
+      AlarmDescription: Investigate failed inference messages in the Dev DLQ.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt InferenceDlq.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  ApiUrl:
+    Value: !Sub 'https://${JobsApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}'
+  UploadBucketName:
+    Value: !Ref UploadBucket
+  JobsTableName:
+    Value: !Ref JobsTable
+  InferenceQueueUrl:
+    Value: !Ref InferenceQueue
+  InferenceDlqUrl:
+    Value: !Ref InferenceDlq
+  WorkerFunctionName:
+    Value: !Ref WorkerFunction

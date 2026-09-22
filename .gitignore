@@ -59,6 +59,7 @@ firebase_options.dart
 # Python environments and generated files
 .venv/
 .venv-training/
+BackendServer/.phase8-build/
 venv/
 __pycache__/
 *.pkl

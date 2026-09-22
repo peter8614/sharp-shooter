@@ -74,6 +74,46 @@ class InferenceWorkerTests(unittest.TestCase):
         self.assertEqual(message.upload.bucket, "test-bucket")
         self.assertEqual(message.upload.job_id, "test-job-id")
 
+    @patch.object(inference_worker, "predict_video")
+    def test_s3_notification_configuration_probe_is_acknowledged(self, predict):
+        event = {
+            "Records": [
+                {
+                    "eventSource": "aws:sqs",
+                    "messageId": "s3-test-message",
+                    "body": json.dumps(
+                        {
+                            "Service": "Amazon S3",
+                            "Event": "s3:TestEvent",
+                            "Bucket": "test-bucket",
+                        }
+                    ),
+                }
+            ]
+        }
+        self.assertEqual(inference_worker.parse_sqs_event(event), [])
+        self.assertEqual(
+            inference_worker.lambda_handler(event, SimpleNamespace()),
+            {"batchItemFailures": []},
+        )
+        predict.assert_not_called()
+
+    def test_unknown_s3_probe_is_not_acknowledged(self):
+        event = {
+            "Records": [
+                {
+                    "messageId": "unknown-message",
+                    "body": json.dumps(
+                        {"Service": "Amazon S3", "Event": "s3:OtherEvent", "Bucket": "test-bucket"}
+                    ),
+                }
+            ]
+        }
+        self.assertEqual(
+            inference_worker.lambda_handler(event, SimpleNamespace()),
+            {"batchItemFailures": [{"itemIdentifier": "unknown-message"}]},
+        )
+
     def test_invalid_s3_or_sqs_event_is_rejected(self):
         with self.assertRaises(ValueError):
             inference_worker.parse_s3_event(s3_event("other/test.mp4"))
