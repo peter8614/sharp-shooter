@@ -21,6 +21,15 @@ Gunicorn worker so the in-memory job registry remains coherent. The CodeBuild
 spec builds the private deployment source bundle and pushes its image to ECR;
 private classifier bundles belong in that deployment bundle, not in Git.
 
+The queue-driven inference worker has a separate, CPU-only AWS Lambda image in
+`Dockerfile.lambda-worker`; it does not include or replace the Flask process.
+Its build verifies the bundled YOLO and private classifier files against
+`lambda-model-manifest.json`, targets `linux/amd64`, and retains
+`inference_worker.lambda_handler` as the production command. The Phase 7 local
+runner checks exact Linux legacy/optimized parity, cross-platform prediction
+decisions, cold/warm reuse, memory, `/tmp`, and image size. See
+[`docs/lambda-container.md`](../docs/lambda-container.md).
+
 ## Authentication sessions
 
 `POST /sign_in` and `POST /register` keep their original `idToken` and
@@ -103,6 +112,13 @@ Required runtime settings are `AWS_REGION`, `UPLOAD_BUCKET`, `JOBS_TABLE`,
 See [`docs/aws-async-jobs.md`](../docs/aws-async-jobs.md) for the exact HTTP
 contract, DynamoDB state machine, S3 object layout, duplicate-event behavior,
 and local mock-test commands.
+
+Containerize and validate the worker locally before Phase 8 deployment:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/run_phase7_container.ps1 `
+  -SourceBackend "C:\trusted\sharp-shooter\BackendServer"
+```
 
 ## Train classifiers
 
