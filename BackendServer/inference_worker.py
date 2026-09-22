@@ -92,6 +92,16 @@ def parse_sqs_event(event: dict) -> list[SqsUploadMessage]:
             raise ValueError("Malformed SQS event record") from error
         if not isinstance(message_id, str) or not message_id:
             raise ValueError("SQS message ID is required")
+        # S3 sends this one-off connectivity probe when the bucket notification
+        # is configured. Unlike upload notifications, it has no Records array.
+        if (
+            isinstance(body, dict)
+            and body.get("Service") == "Amazon S3"
+            and body.get("Event") == "s3:TestEvent"
+            and isinstance(body.get("Bucket"), str)
+            and body["Bucket"]
+        ):
+            continue
         uploads = parse_s3_event(body)
         if len(uploads) != 1:
             raise ValueError("Each SQS message must contain one S3 upload record")

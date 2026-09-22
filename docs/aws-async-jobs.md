@@ -195,8 +195,9 @@ python -m unittest discover -s tests -p "test_aws*.py" -v
 python -m unittest discover -s tests -p "test_inference_worker.py" -v
 ```
 
-Before deployment, infrastructure still needs to define the private bucket,
-DynamoDB table, Standard source queue, DLQ/redrive policy, S3 queue policy and
-event filter, batch-size-one Lambda event-source mapping with partial-batch
-responses, API routes, IAM roles, logging/alarms, retention, and Lambda image and
-resource limits.
+Phase 8 defines and deploys the private bucket, table, queues and redrive
+policy, S3 event filter, batch-size-one Lambda mapping with partial-batch
+responses, IAM-protected API routes, roles, logs, budget, and resource limits.
+See [`aws-dev-deployment.md`](aws-dev-deployment.md) for the Dev runbook.
+The worker also acknowledges S3's one-off `s3:TestEvent` configuration probe;
+malformed and permanently failing upload notifications still retry to the DLQ.

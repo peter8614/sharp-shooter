@@ -104,8 +104,9 @@ an upload job, polling its status, and processing S3 notifications delivered
 through a Standard SQS queue. DynamoDB processing leases recover jobs after a
 timeout or crash, while worker tokens prevent stale invocations from committing
 results. It keeps boto3 access behind reusable service modules and calls the same
-optimized `predict_video()` entry point used above. This phase does not deploy
-resources, and the legacy `/get_prediction` route remains available.
+optimized `predict_video()` entry point used above. The application layer was
+originally tested locally; Phase 8 deploys an IAM-protected AWS Dev environment
+without changing Flutter or the legacy `/get_prediction` route.
 
 Required runtime settings are `AWS_REGION`, `UPLOAD_BUCKET`, `JOBS_TABLE`,
 `PROCESSING_LEASE_SECONDS`, and `MAX_PROCESSING_ATTEMPTS`.
@@ -119,6 +120,9 @@ Containerize and validate the worker locally before Phase 8 deployment:
 powershell -ExecutionPolicy Bypass -File scripts/run_phase7_container.ps1 `
   -SourceBackend "C:\trusted\sharp-shooter\BackendServer"
 ```
+
+For the deployed Dev stack, budget, security defaults, and repeatable deployment
+steps, see [`docs/aws-dev-deployment.md`](../docs/aws-dev-deployment.md).
 
 ## Train classifiers
 

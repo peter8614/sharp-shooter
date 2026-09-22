@@ -61,9 +61,9 @@ Flask API / bounded job queue
 
 ### AWS migration status
 
-The repository also contains the locally validated application layer for the
-next asynchronous backend. It has not been deployed yet and does not replace the
-working Flask/Flutter path above:
+The asynchronous backend now has a minimal AWS Dev deployment in `us-east-1`.
+It does not replace the working Flask/Flutter path above: the new Dev API uses
+IAM authorization and is not yet connected to the mobile app.
 
 ```text
 POST /jobs ──► DynamoDB pending job ──► presigned S3 upload
@@ -87,6 +87,10 @@ and terminal SQS failures remain eligible for redrive to a DLQ. See the
 [Phase 5.5 benchmark](BackendServer/reports/phase-5.5-benchmark.md). The worker
 container and no-deployment local validation procedure are documented in the
 [Phase 7 Lambda container guide](docs/lambda-container.md).
+The private S3/SQS/DLQ/DynamoDB/ECR/Lambda/API deployment, AWS Budget, and
+operational settings are documented in the
+[Phase 8 Dev runbook](docs/aws-dev-deployment.md). Real AWS video end-to-end
+testing and performance measurement remain Phase 9 work.
 
 ## Technology
 

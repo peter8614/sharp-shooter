@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-09-22 — Phase 8 minimal AWS Dev deployment
+
+- Added repeatable CloudFormation bootstrap and Dev templates for private S3
+  uploads, Standard SQS with DLQ, DynamoDB, private ECR, an x86_64 inference
+  Lambda, two lightweight job API Lambdas, IAM-protected HTTP API, least-privilege
+  roles, retained CloudWatch logs, and a DLQ alarm. No VPC/NAT or always-on server.
+- Deployed to the confirmed AWS Dev account in `us-east-1` with a 10 USD monthly
+  account-wide Budget and 50%/100% email alerts, two-day video expiration,
+  five-receive DLQ redrive, batch size one, and a 300-second/3008-MiB Worker.
+  The account's current Lambda memory quota rejected 3072 MiB; CloudFormation
+  rolled that attempt back cleanly before the corrected deployment succeeded.
+- Recognized S3's one-off `s3:TestEvent` notification in the SQS worker so the
+  configuration probe is acknowledged without inference or false DLQ alarms.
+  The deployed update overlays only the worker parser on the Phase 7-validated
+  image; the model and inference pipeline are unchanged.
+- Kept Flutter and the legacy Flask route unchanged. Real AWS video inference,
+  failure/lease/DLQ exercises, cold/warm timings, and cost measurement remain
+  Phase 9 work.
+
 ## 2026-09-18–22 — Phase 7 Lambda inference container
 
 - Added a dedicated AWS Lambda Python 3.12 / Amazon Linux 2023 `linux/amd64`

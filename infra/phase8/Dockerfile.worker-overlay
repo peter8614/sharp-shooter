@@ -1,0 +1,5 @@
+# Keep the Phase 7-tested Python, native libraries, models, and inference core
+# byte-for-byte identical while updating only SQS envelope handling.
+FROM sharp-shooter-inference:phase7
+COPY inference_worker.py ${LAMBDA_TASK_ROOT}/inference_worker.py
+CMD ["inference_worker.lambda_handler"]
