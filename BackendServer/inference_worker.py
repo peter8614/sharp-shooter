@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import shutil
 import tempfile
+import threading
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -22,6 +26,8 @@ from core.inference import predict_video
 
 
 logger = logging.getLogger(__name__)
+_RUNTIME_ID = uuid.uuid4().hex
+_HANDLER_INVOCATIONS = 0
 _KEY_PATTERN = re.compile(
     r"^uploads/(?P<job_id>[A-Za-z0-9-]+)/input(?P<extension>\.[A-Za-z0-9]+)$"
 )
@@ -46,6 +52,55 @@ class UploadRecord:
 class SqsUploadMessage:
     message_id: str
     upload: UploadRecord
+
+
+class _TmpUsageSampler:
+    """Sample Lambda /tmp usage without touching inference implementation."""
+
+    def __init__(self) -> None:
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self.capacity_bytes: int | None = None
+        self.before_bytes: int | None = None
+        self.peak_bytes: int | None = None
+        self.after_bytes: int | None = None
+
+    def _sample(self) -> int | None:
+        try:
+            usage = shutil.disk_usage(tempfile.gettempdir())
+        except OSError:
+            return None
+        self.capacity_bytes = usage.total
+        return usage.used
+
+    def _run(self) -> None:
+        while not self._stop.wait(0.5):
+            used = self._sample()
+            if used is not None:
+                self.peak_bytes = max(self.peak_bytes or 0, used)
+
+    def start(self) -> None:
+        self.before_bytes = self._sample()
+        self.peak_bytes = self.before_bytes
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=2)
+        self.after_bytes = self._sample()
+        if self.after_bytes is not None:
+            self.peak_bytes = max(self.peak_bytes or 0, self.after_bytes)
+
+
+def _detector_cached() -> bool | None:
+    try:
+        from video_pipeline import DEFAULT_WEIGHTS
+        from yolo_detector import detector_is_cached
+
+        return detector_is_cached(DEFAULT_WEIGHTS, "cpu")
+    except Exception:
+        # Diagnostics must never change the inference outcome.
+        return None
 
 
 def parse_s3_event(event: dict) -> list[UploadRecord]:
@@ -177,6 +232,7 @@ def process_upload(
     now: datetime | None = None,
     lease_seconds: int | None = None,
     max_attempts: int | None = None,
+    invocation_number: int | None = None,
 ) -> dict:
     """Claim and process one upload independently of its AWS event envelope."""
     lease_duration = (
@@ -196,6 +252,15 @@ def process_upload(
         return early_outcome
 
     attempt_count = int(claimed.get("attempt_count", 1))
+    diagnostics = os.environ.get("WORKER_DIAGNOSTICS_ENABLED") == "1"
+    sampler = _TmpUsageSampler() if diagnostics else None
+    cached_before = _detector_cached() if diagnostics else None
+    started = time.perf_counter()
+    if sampler is not None:
+        try:
+            sampler.start()
+        except Exception:
+            sampler = None
     try:
         with tempfile.TemporaryDirectory(
             prefix=f"sharp-shooter-{upload.job_id}-"
@@ -232,6 +297,32 @@ def process_upload(
         except job_store.JobOwnershipError:
             logger.warning("Worker lost lease while failing job %s", upload.job_id)
             return {"job_id": upload.job_id, "outcome": "ownership_lost"}
+    finally:
+        if sampler is not None:
+            try:
+                sampler.stop()
+                print(
+                    "WORKER_DIAGNOSTIC "
+                    + json.dumps(
+                        {
+                            "job_id": upload.job_id,
+                            "runtime_id": _RUNTIME_ID,
+                            "invocation_number": invocation_number,
+                            "attempt_count": attempt_count,
+                            "elapsed_seconds": round(time.perf_counter() - started, 3),
+                            "detector_cached_before": cached_before,
+                            "detector_cached_after": _detector_cached(),
+                            "tmp_capacity_bytes": sampler.capacity_bytes,
+                            "tmp_used_before_bytes": sampler.before_bytes,
+                            "tmp_used_peak_sampled_bytes": sampler.peak_bytes,
+                            "tmp_used_after_bytes": sampler.after_bytes,
+                        },
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
+            except Exception:
+                logger.warning("Worker diagnostics unavailable for %s", upload.job_id)
 
 
 def _worker_token(context) -> str:
@@ -241,6 +332,8 @@ def _worker_token(context) -> str:
 
 def lambda_handler(event, context):
     """Handle SQS records and report failures for Lambda partial batch response."""
+    global _HANDLER_INVOCATIONS
+    _HANDLER_INVOCATIONS += 1
     try:
         messages = parse_sqs_event(event)
     except ValueError:
@@ -255,7 +348,11 @@ def lambda_handler(event, context):
     token = _worker_token(context)
     failures = []
     for message in messages:
-        outcome = process_upload(message.upload, worker_token=token)
+        outcome = process_upload(
+            message.upload,
+            worker_token=token,
+            invocation_number=_HANDLER_INVOCATIONS,
+        )
         if outcome["outcome"] in _RETRYABLE_OUTCOMES | _DLQ_OUTCOMES:
             failures.append({"itemIdentifier": message.message_id})
     return {"batchItemFailures": failures}

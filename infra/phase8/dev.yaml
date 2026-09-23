@@ -32,6 +32,10 @@ Parameters:
     Default: 3
     MinValue: 1
     MaxValue: 10
+  WorkerDiagnosticsEnabled:
+    Type: String
+    Default: '1'
+    AllowedValues: ['0', '1']
 
 Resources:
   InferenceDlq:
@@ -289,6 +293,7 @@ Resources:
           JOBS_TABLE: !Ref JobsTable
           PROCESSING_LEASE_SECONDS: !Ref ProcessingLeaseSeconds
           MAX_PROCESSING_ATTEMPTS: !Ref MaxProcessingAttempts
+          WORKER_DIAGNOSTICS_ENABLED: !Ref WorkerDiagnosticsEnabled
       Tags:
         - Key: Project
           Value: sharp-shooter

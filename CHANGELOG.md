@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-09-23 — Phase 9 real AWS Dev validation
+
+- Completed real IAM-signed create/get API, HTTPS presigned S3 upload, Standard
+  SQS, Lambda inference, and DynamoDB result tests with public demo videos.
+  Classification and coaching categories matched Phase 7; some confidence and
+  frame-count values differed, so exact cross-environment parity is not claimed.
+- Verified completed-job duplicate SQS messages, safe invalid-video failure
+  after three processing attempts, the deployed queue's five-receive DLQ
+  redrive, and the visible-DLQ CloudWatch alarm.
+- Forced a real 10-second Lambda timeout and verified the processing lease
+  blocks an active duplicate; after accelerated lease expiry, attempt two
+  completed. Restored the 300-second timeout and S3/SQS wiring.
+- Added Dev-configurable Worker diagnostics for same-runtime YOLO cache reuse,
+  execution time, and sampled `/tmp` usage without modifying the ML pipeline.
+  Same-runtime warm video inference was materially faster than a cold call.
+- Added repeatable Phase 9 test scripts and a report with CloudWatch durations,
+  memory, `/tmp`, approximate compute cost, and Phase 10 handoff concerns.
+  Flutter and the legacy Flask route remain unchanged.
+
 ## 2026-09-22 — Phase 8 minimal AWS Dev deployment
 
 - Added repeatable CloudFormation bootstrap and Dev templates for private S3
