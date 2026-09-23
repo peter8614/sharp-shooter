@@ -9,7 +9,8 @@ param(
     [int]$WorkerMemoryMb = 3008,
     [int]$QueueVisibilitySeconds = 1800,
     [int]$ProcessingLeaseSeconds = 360,
-    [int]$MaxProcessingAttempts = 3
+    [int]$MaxProcessingAttempts = 3,
+    [ValidateSet('0', '1')][string]$WorkerDiagnosticsEnabled = '1'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -134,7 +135,7 @@ aws cloudformation deploy --region $Region --stack-name $appStack `
     --parameter-overrides "InferenceImageUri=$imageUri" "ApiCodeBucket=$artifactBucket" "ApiCodeKey=$artifactKey" `
     "WorkerTimeoutSeconds=$WorkerTimeoutSeconds" "WorkerMemoryMb=$WorkerMemoryMb" `
     "QueueVisibilitySeconds=$QueueVisibilitySeconds" "ProcessingLeaseSeconds=$ProcessingLeaseSeconds" `
-    "MaxProcessingAttempts=$MaxProcessingAttempts" `
+    "MaxProcessingAttempts=$MaxProcessingAttempts" "WorkerDiagnosticsEnabled=$WorkerDiagnosticsEnabled" `
     --tags Project=sharp-shooter Environment=dev `
     --no-fail-on-empty-changeset
 if ($LASTEXITCODE -ne 0) { throw 'Dev deployment failed; inspect CloudFormation events.' }

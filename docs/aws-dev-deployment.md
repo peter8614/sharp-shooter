@@ -15,8 +15,14 @@ sharp-shooter-dev
 ```
 
 There is no VPC, NAT Gateway, load balancer, always-on server, Redis, RDS,
-Kubernetes, Firebase migration, or Flutter change. Phase 9, not this phase,
-will run real AWS video end-to-end and benchmark cold/warm performance.
+Kubernetes, Firebase migration, or Flutter change. The subsequent real AWS
+video, failure, lease, DLQ, cold/warm, and cost results are in the
+[Phase 9 validation report](aws-phase9-validation.md).
+
+The Dev Worker emits `WORKER_DIAGNOSTIC` CloudWatch lines when the configurable
+`WorkerDiagnosticsEnabled` template parameter is `1`; set it to `0` to disable
+sampling. Diagnostics are outside `predict_video()` and do not alter results.
+The Dev IAM API is not a mobile production endpoint.
 
 ## Deploy
 

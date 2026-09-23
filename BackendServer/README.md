@@ -106,7 +106,9 @@ timeout or crash, while worker tokens prevent stale invocations from committing
 results. It keeps boto3 access behind reusable service modules and calls the same
 optimized `predict_video()` entry point used above. The application layer was
 originally tested locally; Phase 8 deploys an IAM-protected AWS Dev environment
-without changing Flutter or the legacy `/get_prediction` route.
+without changing Flutter or the legacy `/get_prediction` route. Phase 9 real
+AWS video, retry, DLQ, lease, warm-cache, and resource measurements are in
+[`docs/aws-phase9-validation.md`](../docs/aws-phase9-validation.md).
 
 Required runtime settings are `AWS_REGION`, `UPLOAD_BUCKET`, `JOBS_TABLE`,
 `PROCESSING_LEASE_SECONDS`, and `MAX_PROCESSING_ATTEMPTS`.

@@ -89,8 +89,10 @@ container and no-deployment local validation procedure are documented in the
 [Phase 7 Lambda container guide](docs/lambda-container.md).
 The private S3/SQS/DLQ/DynamoDB/ECR/Lambda/API deployment, AWS Budget, and
 operational settings are documented in the
-[Phase 8 Dev runbook](docs/aws-dev-deployment.md). Real AWS video end-to-end
-testing and performance measurement remain Phase 9 work.
+[Phase 8 Dev runbook](docs/aws-dev-deployment.md). Phase 9 real AWS end-to-end,
+failure/lease/DLQ, cold/warm, `/tmp`, and cost findings are in the
+[Phase 9 validation report](docs/aws-phase9-validation.md). The Dev API remains
+IAM-protected; Flutter integration and user authorization are Phase 10 work.
 
 ## Technology
 

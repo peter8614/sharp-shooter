@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
+import io
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import inference_worker
 from aws_backend import job_store
@@ -61,6 +64,67 @@ def claimed_job(attempt_count: int = 1, token: str = "worker-1") -> dict:
 
 
 class InferenceWorkerTests(unittest.TestCase):
+    def test_worker_diagnostics_report_cache_and_tmp_without_changing_result(self):
+        sampler = Mock(
+            capacity_bytes=550461440,
+            before_bytes=49152,
+            peak_bytes=5386240,
+            after_bytes=61440,
+        )
+        output = io.StringIO()
+        upload = inference_worker.parse_s3_event(s3_event())[0]
+        with (
+            patch.dict(os.environ, {"WORKER_DIAGNOSTICS_ENABLED": "1"}),
+            patch.object(inference_worker, "_TmpUsageSampler", return_value=sampler),
+            patch.object(inference_worker, "_detector_cached", side_effect=[False, True]),
+            patch.object(inference_worker.job_store, "get_job", return_value=pending_job()),
+            patch.object(
+                inference_worker.job_store,
+                "mark_job_processing",
+                return_value=claimed_job(),
+            ),
+            patch.object(inference_worker.job_store, "complete_job") as complete,
+            patch.object(inference_worker.s3_service, "download_video"),
+            patch.object(inference_worker, "predict_video", return_value={"success": True}),
+            redirect_stdout(output),
+        ):
+            outcome = inference_worker.process_upload(
+                upload, worker_token="worker-1", invocation_number=2
+            )
+        self.assertEqual(outcome["outcome"], "completed")
+        complete.assert_called_once()
+        sampler.start.assert_called_once()
+        sampler.stop.assert_called_once()
+        line = output.getvalue().strip()
+        self.assertTrue(line.startswith("WORKER_DIAGNOSTIC "))
+        diagnostic = json.loads(line.removeprefix("WORKER_DIAGNOSTIC "))
+        self.assertEqual(diagnostic["invocation_number"], 2)
+        self.assertFalse(diagnostic["detector_cached_before"])
+        self.assertTrue(diagnostic["detector_cached_after"])
+        self.assertEqual(diagnostic["tmp_used_peak_sampled_bytes"], 5386240)
+
+    def test_diagnostics_failure_does_not_block_inference(self):
+        sampler = Mock()
+        sampler.start.side_effect = RuntimeError("metrics unavailable")
+        upload = inference_worker.parse_s3_event(s3_event())[0]
+        with (
+            patch.dict(os.environ, {"WORKER_DIAGNOSTICS_ENABLED": "1"}),
+            patch.object(inference_worker, "_TmpUsageSampler", return_value=sampler),
+            patch.object(inference_worker, "_detector_cached", return_value=None),
+            patch.object(inference_worker.job_store, "get_job", return_value=pending_job()),
+            patch.object(
+                inference_worker.job_store,
+                "mark_job_processing",
+                return_value=claimed_job(),
+            ),
+            patch.object(inference_worker.job_store, "complete_job") as complete,
+            patch.object(inference_worker.s3_service, "download_video"),
+            patch.object(inference_worker, "predict_video", return_value={"success": True}),
+        ):
+            outcome = inference_worker.process_upload(upload, worker_token="worker-1")
+        self.assertEqual(outcome["outcome"], "completed")
+        complete.assert_called_once()
+
     def test_s3_event_parsing_decodes_key(self):
         upload = inference_worker.parse_s3_event(
             s3_event("uploads%2Ftest-job-id%2Finput.mp4")
