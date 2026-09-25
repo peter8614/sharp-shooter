@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Sharp Shooter minimal, IAM-protected AWS Dev inference environment.
+Description: Sharp Shooter Dev inference with IAM operations and Cognito App routes.
 
 Parameters:
   InferenceImageUri:
@@ -18,6 +18,44 @@ Parameters:
     Default: 3008
     MinValue: 1024
     MaxValue: 10240
+  WorkerEphemeralStorageMb:
+    Type: Number
+    Default: 2048
+    MinValue: 512
+    MaxValue: 10240
+  ResultsRetentionDays:
+    Type: Number
+    Default: 7
+    MinValue: 1
+    MaxValue: 365
+  ReferenceCatalogKey:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^references/catalog-[0-9a-f]{64}\.json$'
+  ResultVideoEnabled:
+    Type: String
+    Default: '0'
+    AllowedValues: ['0', '1']
+  CoachingEnabled:
+    Type: String
+    Default: '0'
+    AllowedValues: ['0', '1']
+  OpenAiApiKeyParameterName:
+    Type: String
+    Default: /sharp-shooter/dev/openai-api-key
+    AllowedPattern: '^/sharp-shooter/dev/[A-Za-z0-9/_-]+$'
+  CoachingLeaseSeconds:
+    Type: Number
+    Default: 90
+    MinValue: 31
+  MaxCoachingAttempts:
+    Type: Number
+    Default: 3
+    MinValue: 1
+    MaxValue: 10
+  OpenAiModel:
+    Type: String
+    Default: gpt-5.4-nano
   QueueVisibilitySeconds:
     Type: Number
     Default: 1800
@@ -36,8 +74,69 @@ Parameters:
     Type: String
     Default: '1'
     AllowedValues: ['0', '1']
+  AllowCognitoSelfSignup:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  DisableCognitoSelfSignup: !Equals [!Ref AllowCognitoSelfSignup, 'false']
 
 Resources:
+  AppUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: sharp-shooter-dev-app
+      UserPoolTier: LITE
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: !If [DisableCognitoSelfSignup, true, false]
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          RequireUppercase: true
+      UserPoolTags:
+        Project: sharp-shooter
+        Environment: dev
+
+  AppUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub 'sharp-shooter-dev-${AWS::AccountId}-${AWS::Region}'
+      UserPoolId: !Ref AppUserPool
+      ManagedLoginVersion: 1
+
+  AppUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref AppUserPool
+      ClientName: sharp-shooter-dev-mobile
+      GenerateSecret: false
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email]
+      CallbackURLs:
+        - 'com.codingminds.shotrater://oauth/callback'
+      LogoutURLs:
+        - 'com.codingminds.shotrater://oauth/logout'
+      SupportedIdentityProviders: [COGNITO]
+      PreventUserExistenceErrors: ENABLED
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+
   InferenceDlq:
     Type: AWS::SQS::Queue
     Properties:
@@ -65,6 +164,24 @@ Resources:
           Value: sharp-shooter
         - Key: Environment
           Value: dev
+
+  CoachingDlq:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: sharp-shooter-dev-coaching-dlq
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  CoachingQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: sharp-shooter-dev-coaching
+      VisibilityTimeout: 180
+      MessageRetentionPeriod: 345600
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt CoachingDlq.Arn
+        maxReceiveCount: 5
 
   UploadQueuePolicy:
     Type: AWS::SQS::QueuePolicy
@@ -111,6 +228,10 @@ Resources:
             ExpirationInDays: 2
             AbortIncompleteMultipartUpload:
               DaysAfterInitiation: 1
+          - Id: expire-processed-videos
+            Prefix: results/
+            Status: Enabled
+            ExpirationInDays: !Ref ResultsRetentionDays
       NotificationConfiguration:
         QueueConfigurations:
           - Event: s3:ObjectCreated:*
@@ -169,6 +290,12 @@ Resources:
       LogGroupName: /aws/lambda/sharp-shooter-dev-inference
       RetentionInDays: 14
 
+  CoachingLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/sharp-shooter-dev-coaching
+      RetentionInDays: 14
+
   CreateLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -203,6 +330,14 @@ Resources:
                 Resource: !Sub '${UploadBucket.Arn}/uploads/*'
               - Effect: Allow
                 Action:
+                  - s3:GetObject
+                Resource: !Sub '${UploadBucket.Arn}/references/catalog-*.json'
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub '${UploadBucket.Arn}/results/*'
+              - Effect: Allow
+                Action:
                   - dynamodb:GetItem
                   - dynamodb:UpdateItem
                 Resource: !GetAtt JobsTable.Arn
@@ -213,10 +348,49 @@ Resources:
                   - sqs:GetQueueAttributes
                 Resource: !GetAtt InferenceQueue.Arn
               - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt CoachingQueue.Arn
+              - Effect: Allow
                 Action:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/sharp-shooter-dev-inference:*'
+
+  CoachingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: sharp-shooter-dev-coaching
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: coaching-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt JobsTable.Arn
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt CoachingQueue.Arn
+              - Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${OpenAiApiKeyParameterName}'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/sharp-shooter-dev-coaching:*'
 
   CreateRole:
     Type: AWS::IAM::Role
@@ -266,6 +440,11 @@ Resources:
                 Action: dynamodb:GetItem
                 Resource: !GetAtt JobsTable.Arn
               - Effect: Allow
+                Action: s3:GetObject
+                Resource:
+                  - !Sub '${UploadBucket.Arn}/results/*'
+                  - !Sub '${UploadBucket.Arn}/references/videos/*'
+              - Effect: Allow
                 Action:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
@@ -285,7 +464,7 @@ Resources:
       Timeout: !Ref WorkerTimeoutSeconds
       MemorySize: !Ref WorkerMemoryMb
       EphemeralStorage:
-        Size: 512
+        Size: !Ref WorkerEphemeralStorageMb
       ReservedConcurrentExecutions: 2
       Environment:
         Variables:
@@ -294,6 +473,10 @@ Resources:
           PROCESSING_LEASE_SECONDS: !Ref ProcessingLeaseSeconds
           MAX_PROCESSING_ATTEMPTS: !Ref MaxProcessingAttempts
           WORKER_DIAGNOSTICS_ENABLED: !Ref WorkerDiagnosticsEnabled
+          RESULT_VIDEO_ENABLED: !Ref ResultVideoEnabled
+          NBA_REFERENCE_CATALOG_KEY: !Ref ReferenceCatalogKey
+          COACHING_ENABLED: !Ref CoachingEnabled
+          COACHING_QUEUE_URL: !Ref CoachingQueue
       Tags:
         - Key: Project
           Value: sharp-shooter
@@ -334,6 +517,32 @@ Resources:
       Environment:
         Variables:
           JOBS_TABLE: !Ref JobsTable
+          UPLOAD_BUCKET: !Ref UploadBucket
+
+  CoachingFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: CoachingLogGroup
+    Properties:
+      FunctionName: sharp-shooter-dev-coaching
+      PackageType: Image
+      Architectures: [x86_64]
+      Code:
+        ImageUri: !Ref InferenceImageUri
+      ImageConfig:
+        Command: [coaching_worker.lambda_handler]
+      Role: !GetAtt CoachingRole.Arn
+      Timeout: 30
+      MemorySize: 1024
+      ReservedConcurrentExecutions: 2
+      Environment:
+        Variables:
+          JOBS_TABLE: !Ref JobsTable
+          COACHING_LEASE_SECONDS: !Ref CoachingLeaseSeconds
+          MAX_COACHING_ATTEMPTS: !Ref MaxCoachingAttempts
+          OPENAI_API_KEY_PARAMETER: !Ref OpenAiApiKeyParameterName
+          OPENAI_MODEL: !Ref OpenAiModel
+          OPENAI_REASONING_EFFORT: low
+          UPLOAD_BUCKET: !Ref UploadBucket
 
   WorkerEventSource:
     Type: AWS::Lambda::EventSourceMapping
@@ -347,12 +556,36 @@ Resources:
         MaximumConcurrency: 2
       Enabled: true
 
+  CoachingEventSource:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt CoachingQueue.Arn
+      FunctionName: !Ref CoachingFunction
+      BatchSize: 1
+      FunctionResponseTypes: [ReportBatchItemFailures]
+      ScalingConfig:
+        MaximumConcurrency: 2
+      Enabled: true
+
   JobsApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
       Name: sharp-shooter-dev-jobs
       ProtocolType: HTTP
       DisableExecuteApiEndpoint: false
+
+  AppJwtAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId: !Ref JobsApi
+      Name: sharp-shooter-dev-app-jwt
+      AuthorizerType: JWT
+      IdentitySource:
+        - '$request.header.Authorization'
+      JwtConfiguration:
+        Audience:
+          - !Ref AppUserPoolClient
+        Issuer: !Sub 'https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${AppUserPool}'
 
   CreateIntegration:
     Type: AWS::ApiGatewayV2::Integration
@@ -392,6 +625,45 @@ Resources:
         - - integrations
           - !Ref GetIntegration
 
+  AppCreateRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref JobsApi
+      RouteKey: 'POST /app/jobs'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref AppJwtAuthorizer
+      AuthorizationScopes: [openid]
+      Target: !Join
+        - /
+        - - integrations
+          - !Ref CreateIntegration
+
+  AppGetRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref JobsApi
+      RouteKey: 'GET /app/jobs/{job_id}'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref AppJwtAuthorizer
+      AuthorizationScopes: [openid]
+      Target: !Join
+        - /
+        - - integrations
+          - !Ref GetIntegration
+
+  AppVideoRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref JobsApi
+      RouteKey: 'GET /app/jobs/{job_id}/videos/{video_kind}'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref AppJwtAuthorizer
+      AuthorizationScopes: [openid]
+      Target: !Join
+        - /
+        - - integrations
+          - !Ref GetIntegration
+
   ApiStage:
     Type: AWS::ApiGatewayV2::Stage
     Properties:
@@ -418,6 +690,30 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${JobsApi}/*/GET/jobs/*'
 
+  AppCreateInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref CreateFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${JobsApi}/*/POST/app/jobs'
+
+  AppGetInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref GetFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${JobsApi}/*/GET/app/jobs/*'
+
+  AppVideoInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref GetFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${JobsApi}/*/GET/app/jobs/*/videos/*'
+
   DlqVisibleAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -435,9 +731,34 @@ Resources:
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
 
+  CoachingDlqVisibleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: sharp-shooter-dev-coaching-dlq-visible
+      AlarmDescription: Investigate failed AI coaching messages in the Dev DLQ.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt CoachingDlq.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
 Outputs:
   ApiUrl:
     Value: !Sub 'https://${JobsApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}'
+  AppApiUrl:
+    Value: !Sub 'https://${JobsApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/app'
+  AppUserPoolId:
+    Value: !Ref AppUserPool
+  AppUserPoolClientId:
+    Value: !Ref AppUserPoolClient
+  AppCognitoDomain:
+    Value: !Sub 'https://${AppUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'
   UploadBucketName:
     Value: !Ref UploadBucket
   JobsTableName:
@@ -446,5 +767,9 @@ Outputs:
     Value: !Ref InferenceQueue
   InferenceDlqUrl:
     Value: !Ref InferenceDlq
+  CoachingQueueUrl:
+    Value: !Ref CoachingQueue
+  CoachingDlqUrl:
+    Value: !Ref CoachingDlq
   WorkerFunctionName:
     Value: !Ref WorkerFunction

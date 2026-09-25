@@ -13,6 +13,7 @@ from llm_analysis import (
     build_coaching_instructions,
     build_landmark_summary,
     create_llm_analysis,
+    create_llm_analysis_from_summary,
 )
 
 
@@ -53,6 +54,52 @@ class FakeResponses:
 
 
 class LlmAnalysisTests(unittest.TestCase):
+    def test_chinese_coaching_from_summary_uses_private_aggregate_only(self):
+        responses = FakeResponses()
+        responses.create = lambda **kwargs: SimpleNamespace(
+            output_text="主要发现\n现有数据不能定位具体原因。\n如何改进\n保持同一机位复测。"
+        )
+        summary = build_landmark_summary(landmark_csv())
+        with patch.dict(os.environ, {}, clear=True):
+            response = create_llm_analysis_from_summary(
+                summary, "anonymous-safety-id",
+                client=SimpleNamespace(responses=responses),
+                output_language="Chinese",
+            )
+        self.assertIn("主要发现", response)
+        self.assertIn("如何改进", response)
+        self.assertIn("Output in Chinese", build_coaching_instructions("Chinese"))
+
+    def test_generic_concern_omits_raw_class_and_strength_when_flagged(self):
+        responses = FakeResponses()
+        with patch.dict(os.environ, {}, clear=True):
+            create_llm_analysis_from_summary(
+                build_landmark_summary(landmark_csv()),
+                "anonymous-safety-id", client=SimpleNamespace(responses=responses),
+                coaching_context={"coaching_labels": [
+                    {
+                        "code": "form_model_no_issue_detected", "status": "strength",
+                        "area": "form", "confidence": 0.88,
+                        "evidence": {"classification": "good"},
+                        "coaching_goal": "Preserve the pattern.",
+                        "practice": "Retest.",
+                    },
+                    {
+                        "code": "trajectory_model_flagged", "status": "needs_attention",
+                        "area": "trajectory", "confidence": 0.87,
+                        "evidence": {"classification": "bad"},
+                        "coaching_goal": "The cause is unknown.",
+                        "practice": "Use controlled close-range repetitions.",
+                    },
+                ]},
+            )
+        labels = json.loads(responses.request["input"])["model_assessment"]["coaching_labels"]
+        self.assertEqual(len(labels), 1)
+        self.assertEqual(labels[0]["area"], "trajectory")
+        self.assertNotIn("evidence", labels[0])
+        self.assertNotIn("good", responses.request["input"])
+        self.assertNotIn('"bad"', responses.request["input"])
+
     def test_summary_aggregates_rows_and_reports_tracking_failures(self):
         summary = build_landmark_summary(landmark_csv(include_invalid_row=True))
 
@@ -148,7 +195,7 @@ class LlmAnalysisTests(unittest.TestCase):
         self.assertIn("Output in English", prompt)
         self.assertIn("Main Findings", prompt)
         self.assertIn("How to Improve", prompt)
-        self.assertIn("make this the majority of the response", prompt)
+        self.assertIn("Make How to Improve the majority of the response", prompt)
         self.assertIn("never reproduce JSON field names", prompt)
         self.assertIn("Do not output sections titled Data Quality", prompt)
         self.assertIn("only source of named problems", prompt)
@@ -172,6 +219,17 @@ class LlmAnalysisTests(unittest.TestCase):
                     landmark_csv(),
                     "anonymous-safety-id",
                     client=client,
+                )
+
+    def test_instruction_text_copied_into_heading_is_rejected(self):
+        client = SimpleNamespace(responses=SimpleNamespace(create=lambda **kwargs: SimpleNamespace(
+            output_text="Main Findings — explain two findings\nNothing specific.\nHow to Improve\nRetest."
+        )))
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "missing a required coaching section"):
+                create_llm_analysis_from_summary(
+                    build_landmark_summary(landmark_csv()),
+                    "anonymous-safety-id", client=client,
                 )
 
 

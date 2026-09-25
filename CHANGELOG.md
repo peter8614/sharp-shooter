@@ -1,5 +1,80 @@
 # Changelog
 
+## 2026-09-24 — Dev result clarity and playback-link fix
+
+- App results now state the model's Good/Bad judgment explicitly for shooting
+  form and ball trajectory, while retaining confidence and evidence caveats.
+- Fixed the Dev Get Job Lambda configuration to include its private upload
+  bucket, allowing both owner-authorized analyzed and NBA reference video
+  playback links to be signed. Added a deployment regression check.
+- Rebuilt the Android Dev APK and confirmed on a real phone that both videos
+  now play. iOS device validation remains open.
+
+## 2026-09-24 — Phase 10 evidence-based and asynchronous coaching (Dev)
+
+- Replaced raw App result labels with English classifications, confidence
+  context, and bounded advice that explicitly avoids invented motion causes.
+- Added a separate SQS-backed coaching worker with conditional DynamoDB lease,
+  token-guarded completion, retry/DLQ handling, and a private aggregate-only
+  OpenAI request. AI failures do not fail completed video inference.
+- Added Dev infrastructure and SecureString-only key access, backend/Flutter
+  tests, and documentation. AWS Dev deployed with coaching enabled after
+  verifying the Standard SecureString metadata without reading its value.
+- Two real public-Demo jobs completed through S3/SQS/Lambda/DynamoDB with
+  separate AI coaching. The second returned English `Main Findings` and
+  `How to Improve`; a conditional requeue of that test job verified a refined,
+  clean English suggestion. The public API omitted private pose summaries.
+- Fixed a deployment issue where a Buildx attestation produced an OCI index
+  unsupported by Lambda; the build and deployment checks now require a
+  single-image manifest. A fresh Android Dev APK was built; real-phone UI
+  verification and iOS testing remain.
+
+## 2026-09-24 — NBA reference video playback repair
+
+- Diagnosed the phone's corrupted NBA playback: the supplied MP4 reference
+  clips used MPEG-4 Simple Profile (`mp4v`), although a desktop decoder could
+  read them. Catalog publishing now transcodes every reference to H.264
+  Constrained Baseline, `yuv420p`, silent MP4 with fast-start metadata before
+  upload. The original local clips remain untouched.
+- Updated private Dev reference objects, including legacy keys already stored
+  in completed jobs, and switched the Worker to a new versioned catalog.
+- Constrained portrait-video playback to available screen height so controls
+  no longer overflow the bottom of the Android page.
+
+## 2026-09-24 — Phase 10 result media and NBA reference (Dev)
+
+- Persisted the worker's annotated output as a private H.264 MP4 and added
+  owner-checked, short-lived playback links for Cognito App jobs. Job result
+  responses expose availability flags, not S3 object keys or permanent URLs.
+- Published a versioned private Dev catalog pairing 55 licensed-for-Dev NBA
+  clips with existing pose-variance data. Added closest-reference name, clip,
+  and an explicitly experimental variance-based similarity percentage.
+- Added seven-day S3 expiry for analyzed videos, configurable worker scratch
+  space, and App result playback controls. The inference models and
+  `predict_video()` result format were not changed.
+- Added catalog, media-conversion, worker, API authorization, and Flutter
+  tests. A real IAM-signed Dev upload completed with both video objects and a
+  reference result; authenticated Android/iOS playback still needs a phone
+  check.
+
+## 2026-09-23 — Phase 10 Cognito App integration (Dev validation pending)
+
+- Added Cognito User Pool, public PKCE mobile client, and JWT-scoped `/app/jobs`
+  routes alongside the unchanged IAM Dev routes. Dev self-registration is
+  disabled by default; only administrators create test users. The pool uses
+  the Cognito Lite tier and classic Hosted UI.
+- Bound App-created jobs to the Cognito subject and returned 404 for another
+  user's job or an IAM job without an owner. SQS, worker, and inference logic
+  remain unchanged.
+- Added opt-in Flutter browser sign-in, secure refresh-token storage,
+  direct presigned S3 PUT, three-second status polling, inline result display,
+  configuration checks, and compatibility with the old Flask path.
+- Local backend/Flutter and Android Debug validation completed. Live Cognito
+  Dev deployment completed with `UPDATE_COMPLETE`; anonymous JWT and IAM
+  requests were rejected, and an administrator-created test invitation was
+  delivered. Real JWT/phone/iOS testing remains a separate gate; do not treat
+  this as a production release.
+
 ## 2026-09-23 — Phase 9 real AWS Dev validation
 
 - Completed real IAM-signed create/get API, HTTPS presigned S3 upload, Standard

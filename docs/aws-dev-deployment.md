@@ -75,6 +75,8 @@ while the environment is idle from ECR/S3/log storage and any AWS service usage.
 | Processing lease / attempts | 360 s / 3 |
 | SQS visibility / DLQ redrive | 1800 s / 5 receives |
 | Video expiration / deployment ZIP expiration | 2 days / 7 days |
+| Analyzed result video expiration | 7 days (configurable) |
+| Worker ephemeral storage for annotated-video conversion | 2048 MiB (configurable) |
 | CloudWatch Lambda log retention | 14 days |
 | Monthly budget | configurable; initial 10 USD, email at 50% and 100% |
 
@@ -91,10 +93,21 @@ current Lambda limit; the Dev stack was cleanly rolled back and recreated with
 Both S3 buckets block public access, enforce TLS, use S3-managed encryption,
 and have lifecycle rules. SQS uses SQS-managed encryption. Lambda roles are
 limited to their required upload keys, table actions, queue, and log groups.
-The Dev HTTP API uses `AWS_IAM` on both routes and 2 requests/second stage
-throttling. It is not directly callable from Flutter yet: Phase 10 must choose
-and implement an end-user authorization scheme before mobile cutover. No
-anonymous job creation is permitted in Dev.
+The original `POST /jobs` and `GET /jobs/{job_id}` routes use `AWS_IAM` and
+the API has 2 requests/second stage throttling. Phase 10 added separate
+Cognito JWT `/app/jobs` routes for the Flutter Dev client; see
+[`aws-phase10-cognito.md`](aws-phase10-cognito.md). Neither route family
+allows anonymous job creation.
+The optional Phase 10 media path stores annotated MP4 files under `results/`
+and a versioned private NBA catalog under `references/`. Enable it explicitly
+with `-ResultVideoEnabled 1 -ReferenceCatalogKey '<catalog key>'` during
+deployment, and preserve those arguments on later stack updates. The
+`-ResultsRetentionDays` parameter controls automatic removal of job videos;
+reference clips do not use that expiry rule. Publish the catalog with
+`publish-reference-catalog.ps1` only after confirming App display rights.
+The publishing script transcodes reference clips to H.264 for mobile playback.
+For a catalog-only change, `update-reference-catalog.ps1` preserves every
+other CloudFormation parameter and avoids pushing a new Worker image.
 `AWS_REGION` is supplied automatically by Lambda, and the lightweight ZIP APIs
 use the Python runtime's bundled boto3. A runtime upgrade should verify that
 SDK compatibility remains intact.

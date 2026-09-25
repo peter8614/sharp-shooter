@@ -192,6 +192,26 @@ def run(args: argparse.Namespace) -> dict:
     if status == "completed":
         result = job.get("result", {})
         report["result"] = result
+        if args.coaching_timeout_seconds > 0 and result.get("coaching_status") in ("queued", "processing"):
+            coaching_deadline = time.monotonic() + args.coaching_timeout_seconds
+            while time.monotonic() < coaching_deadline:
+                time.sleep(args.poll_seconds)
+                code, coaching_job = signed_api_request(
+                    method="GET",
+                    url=f"{args.api_base}/jobs/{job_id}",
+                    payload=None,
+                    region=args.region,
+                    credentials=credentials,
+                )
+                if code != 200:
+                    raise RuntimeError(f"Coaching poll returned HTTP {code}")
+                coaching_result = coaching_job.get("result", {})
+                if coaching_result.get("coaching_status") not in ("queued", "processing"):
+                    report["result"] = coaching_result
+                    break
+            report["coaching_poll_seconds"] = round(
+                time.monotonic() - uploaded_at - report["upload_to_final_seconds"], 3
+            )
         if args.phase7_report:
             baseline = json.loads(args.phase7_report.read_text(encoding="utf-8"))
             matching = next(
@@ -219,6 +239,7 @@ def main() -> int:
     parser.add_argument("--phase7-report", type=Path)
     parser.add_argument("--timeout-seconds", type=int, default=480)
     parser.add_argument("--poll-seconds", type=float, default=3)
+    parser.add_argument("--coaching-timeout-seconds", type=int, default=0)
     args = parser.parse_args()
     args.api_base = args.api_base.rstrip("/")
     report = run(args)

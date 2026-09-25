@@ -15,6 +15,40 @@ Firebase credentials are handled by the backend. Do not place service-account
 keys, API secrets, signing keys, personal videos, or generated pose data in this
 directory.
 
+## Cognito Dev App API (Phase 10)
+
+The new Dev path uses Cognito browser login with PKCE, a JWT-authenticated
+`/app/jobs` API, direct presigned S3 PUT, then three-second polling and inline
+result display. Supply `APP_API_URL`, `COGNITO_CLIENT_ID`, and
+`COGNITO_ISSUER` together as public `--dart-define` values; see
+[`docs/aws-phase10-cognito.md`](../docs/aws-phase10-cognito.md). Never put IAM
+credentials in Flutter. Omitting all three values keeps the legacy backend
+flow. Dev registration is invitation-only, and legacy history/account
+features are not yet migrated to Cognito.
+
+Completed App results show the annotated shot video and, when available, the
+closest NBA catalog clip with an experimental similarity score. Playback uses
+owner-checked API routes to obtain five-minute private S3 URLs on demand; the
+URLs are not persisted. A video can become unavailable after the seven-day
+result retention period. The score is a catalog-ranking heuristic, not a
+validated probability. The older Flask result screen remains separate.
+
+The App result also presents classifier findings in English without exposing
+internal codes: shooting form and ball trajectory explicitly show the model's
+Good/Bad judgment (or Unavailable) with confidence where available. Optional
+AI coaching appears after the completed result when
+the separate backend task finishes; a failure leaves video, score, and
+evidence-based advice usable. Flutter never holds the OpenAI API key.
+Android Dev testing confirmed playback of both private videos after the
+Get Job Lambda received its S3 bucket configuration. iOS device testing is
+still required before release.
+
+Run `flutter pub get` before building or running the Cognito version. In
+particular, do not use `--no-pub` on a fresh checkout: Flutter needs to
+generate its native plugin registration file so the Android AppAuth redirect
+activity and secure-storage plugin are included in the APK. A missing plugin
+can make **Sign in securely** fail before any browser opens.
+
 ## iOS release build
 
 iOS 13 is the minimum deployment target. From macOS, install the supported

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'constants.dart';
 import 'loginScreen.dart';
-
+import 'routePage.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({Key? key}) : super(key: key);
@@ -18,12 +18,24 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> init() async {
+    var restored = false;
+    if (useCognitoAppApi) {
+      try {
+        restored = await cognitoAuth.restore();
+      } catch (_) {
+        // Secure storage may be unavailable or reset after a device restore.
+        // The user can still sign in normally.
+      }
+    }
     await Future.delayed(const Duration(seconds: 2));
     if (!mounted) return;
     // Replacement prevents the splash screen from remaining in back history.
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (BuildContext context) => const LoginPage()),
+      MaterialPageRoute(
+        builder: (BuildContext context) =>
+            restored ? const RouteVolunteerPage() : const LoginPage(),
+      ),
     );
   }
 
@@ -71,7 +83,6 @@ class _SplashScreenState extends State<SplashScreen> {
             ),
             Container(
               height: 630,
-
             )
           ],
         ),

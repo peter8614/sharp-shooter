@@ -16,13 +16,14 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import unquote_plus
 
-from aws_backend import job_store, s3_service
+from aws_backend import coaching_queue, job_store, reference_catalog, s3_service, video_artifacts
 from aws_backend.config import (
     SUPPORTED_VIDEO_TYPES,
     max_processing_attempts,
     processing_lease_seconds,
 )
 from core.inference import predict_video
+from llm_analysis import build_landmark_summary
 
 
 logger = logging.getLogger(__name__)
@@ -271,7 +272,59 @@ def process_upload(
                 key=upload.key,
                 destination=local_video,
             )
-            result = predict_video(local_video)
+            video_enabled = os.environ.get("RESULT_VIDEO_ENABLED") == "1"
+            catalog_key = os.environ.get("NBA_REFERENCE_CATALOG_KEY", "")
+            coaching_enabled = os.environ.get("COACHING_ENABLED") == "1"
+            if video_enabled or catalog_key or coaching_enabled:
+                result = predict_video(local_video, work_dir=Path(temporary_dir) / "analysis")
+                artifacts = result.pop("artifacts")
+                if catalog_key:
+                    try:
+                        entries = reference_catalog.load_catalog(upload.bucket, catalog_key)
+                        reference, score = reference_catalog.closest_reference(
+                            artifacts["landmarks"], entries
+                        )
+                        if reference is not None:
+                            result["player_name"] = reference.player_name
+                            result["similarity_percentage"] = score
+                            result["player_video_key"] = reference.video_key
+                            result["reference_status"] = "available"
+                        else:
+                            result["reference_status"] = "unavailable"
+                    except Exception:
+                        logger.exception("NBA reference comparison unavailable for job %s", upload.job_id)
+                        result["reference_status"] = "error"
+                else:
+                    result["reference_status"] = "unavailable"
+                if video_enabled:
+                    output = video_artifacts.convert_annotated_video(
+                        artifacts["annotated_video"], Path(temporary_dir) / "processed.mp4"
+                    )
+                    # Attempt-specific keys prevent a timed-out worker from
+                    # replacing the video chosen by a newer lease owner.
+                    video_key = f"results/{upload.job_id}/{uuid.uuid4().hex}.mp4"
+                    s3_service.upload_processed_video(
+                        bucket=upload.bucket, key=video_key, source=output
+                    )
+                    result["processed_video_key"] = video_key
+                if coaching_enabled:
+                    try:
+                        content = Path(artifacts["landmarks"]).read_text(encoding="utf-8")
+                        result["coaching_summary"] = build_landmark_summary(content)
+                        result["coaching_status"] = "queued"
+                    except Exception:
+                        logger.exception("Coaching summary unavailable for job %s", upload.job_id)
+                        result["coaching_status"] = "unavailable"
+            else:
+                result = predict_video(local_video)
+        if result.get("coaching_status") == "queued":
+            try:
+                # Enqueue first: a crash before DynamoDB completion leaves only
+                # an orphan message; it cannot lose a completed job's coaching.
+                coaching_queue.enqueue(upload.job_id)
+            except Exception:
+                logger.exception("Coaching could not be queued for job %s", upload.job_id)
+                result["coaching_status"] = "unavailable"
         job_store.complete_job(
             upload.job_id,
             result,

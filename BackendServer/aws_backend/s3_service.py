@@ -54,3 +54,28 @@ def download_video(
         str(resolved_destination),
     )
     return resolved_destination
+
+
+def upload_processed_video(
+    *, bucket: str, key: str, source: str | Path, client=None
+) -> None:
+    if not key.startswith("results/") or not key.endswith(".mp4"):
+        raise ValueError("Invalid processed video key")
+    (client or _get_s3_client()).upload_file(
+        str(source),
+        bucket,
+        key,
+        ExtraArgs={"ContentType": "video/mp4", "ServerSideEncryption": "AES256"},
+    )
+
+
+def generate_download_url(
+    *, bucket: str, key: str, expires_in: int = 300, client=None
+) -> str:
+    if expires_in < 1 or expires_in > 900:
+        raise ValueError("Invalid download URL lifetime")
+    return (client or _get_s3_client()).generate_presigned_url(
+        "get_object",
+        Params={"Bucket": bucket, "Key": key},
+        ExpiresIn=expires_in,
+    )

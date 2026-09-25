@@ -61,9 +61,15 @@ Flask API / bounded job queue
 
 ### AWS migration status
 
-The asynchronous backend now has a minimal AWS Dev deployment in `us-east-1`.
-It does not replace the working Flask/Flutter path above: the new Dev API uses
-IAM authorization and is not yet connected to the mobile app.
+The asynchronous backend has a minimal AWS Dev deployment in `us-east-1`.
+Phase 9 validated the real video path. Phase 10 deployed Cognito/JWT App
+routes and an opt-in Flutter upload/poll/result client. Android Dev testing has
+confirmed sign-in, analysis, English Good/Bad form and trajectory labels,
+AI coaching, and playback of both the analyzed shot and NBA reference clip.
+This remains Dev integration, not a production mobile cutover; iOS validation
+and release checks are still pending. The original IAM routes stay available for
+developer/operations tests, and the legacy Flask/Firebase flow remains a
+separately configured fallback.
 
 ```text
 POST /jobs ──► DynamoDB pending job ──► presigned S3 upload
@@ -76,9 +82,27 @@ POST /jobs ──► DynamoDB pending job ──► presigned S3 upload
                                                 │
                          DynamoDB processing lease / completed result
                                                 │
+                                  private S3 annotated MP4 + NBA reference
+                                                │
                                                 ▼
                                       GET /jobs/{job_id}
 ```
+
+The new App entrypoint uses Cognito authorization code + PKCE and sends its
+access token to `/app/jobs`. It writes a job owner and limits App reads to
+that owner. Flutter never receives IAM credentials and uploads video directly
+to the presigned S3 URL. Completed App jobs can provide owner-checked,
+short-lived links to the annotated video and the nearest private NBA reference
+clip, plus an experimental pose-variance similarity score. See the
+[Phase 10 Cognito/App guide](docs/aws-phase10-cognito.md)
+for configuration, testing, and remaining release gates.
+
+The App result now translates classifier findings into bounded English advice.
+Optional AI coaching runs on a separate SQS/Lambda path and never blocks the
+completed classification or video result. Its API key stays in AWS Systems
+Manager Parameter Store; only anonymous aggregate pose measurements are sent
+to OpenAI. The Dev SecureString and cloud path are configured; do not put the
+API key in Flutter or this repository.
 
 Time-limited leases recover jobs after Lambda timeout, OOM, or process failure.
 Worker tokens prevent a delayed invocation from overwriting a reclaimed job,
@@ -91,8 +115,8 @@ The private S3/SQS/DLQ/DynamoDB/ECR/Lambda/API deployment, AWS Budget, and
 operational settings are documented in the
 [Phase 8 Dev runbook](docs/aws-dev-deployment.md). Phase 9 real AWS end-to-end,
 failure/lease/DLQ, cold/warm, `/tmp`, and cost findings are in the
-[Phase 9 validation report](docs/aws-phase9-validation.md). The Dev API remains
-IAM-protected; Flutter integration and user authorization are Phase 10 work.
+[Phase 9 validation report](docs/aws-phase9-validation.md). The IAM Dev routes
+remain for operations; Flutter uses only the Cognito-authorized App routes.
 
 ## Technology
 

@@ -26,3 +26,18 @@ def parse_json_body(event: dict) -> dict:
     if not isinstance(parsed, dict):
         raise ValueError("The JSON request body must be an object.")
     return parsed
+
+
+def app_subject(event: dict, route_key: str) -> str | None:
+    """Return the trusted JWT subject for an App route; IAM routes stay separate."""
+    if event.get("routeKey") != route_key:
+        return None
+    claims = (
+        ((event.get("requestContext") or {}).get("authorizer") or {})
+        .get("jwt", {})
+        .get("claims", {})
+    )
+    subject = claims.get("sub") if isinstance(claims, dict) else None
+    if not isinstance(subject, str) or not subject.strip():
+        raise PermissionError("Missing authenticated user")
+    return subject

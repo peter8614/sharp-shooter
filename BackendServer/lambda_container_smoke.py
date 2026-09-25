@@ -23,6 +23,7 @@ from pathlib import Path
 import psutil
 
 from core.inference import predict_video
+from aws_backend import reference_catalog, video_artifacts
 from yolo_detector import detector_is_cached
 
 
@@ -102,6 +103,20 @@ def lambda_handler(event, _context):
             device="cpu",
             pipeline=pipeline,
         )
+        media_probe = None
+        if event.get("verify_media") is True:
+            converted = video_artifacts.convert_annotated_video(
+                result["artifacts"]["annotated_video"], invocation_root / "processed.mp4"
+            )
+            media_probe = {"processed_video_bytes": converted.stat().st_size}
+            catalog_path = os.environ.get("LOCAL_REFERENCE_CATALOG_FILE")
+            if catalog_path:
+                catalog = reference_catalog.parse_catalog(Path(catalog_path).read_bytes())
+                reference, score = reference_catalog.closest_reference(
+                    result["artifacts"]["landmarks"], catalog
+                )
+                media_probe["reference_player"] = reference.player_name if reference else None
+                media_probe["reference_similarity_percentage"] = score
         temporary_job_bytes = _directory_size(invocation_root)
     elapsed_seconds = time.perf_counter() - started
     cached_after = detector_is_cached(device="cpu")
@@ -138,5 +153,7 @@ def lambda_handler(event, _context):
             "tmp_free_bytes_after_cleanup": tmp_free,
         },
     }
+    if media_probe is not None:
+        response["media_probe"] = media_probe
     json.dumps(response)
     return response

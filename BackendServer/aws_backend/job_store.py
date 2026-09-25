@@ -114,6 +114,7 @@ def create_job(
     job_id: str,
     s3_bucket: str,
     s3_key: str,
+    owner_sub: str | None = None,
     table=None,
     timestamp: str | None = None,
 ) -> dict:
@@ -127,6 +128,10 @@ def create_job(
         "s3_bucket": s3_bucket,
         "s3_key": s3_key,
     }
+    if owner_sub is not None:
+        if not owner_sub.strip():
+            raise ValueError("owner_sub must be non-empty")
+        item["owner_sub"] = owner_sub
     (table or _get_table()).put_item(
         Item=item,
         ConditionExpression="attribute_not_exists(job_id)",

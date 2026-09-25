@@ -82,6 +82,17 @@ class JobStoreTests(unittest.TestCase):
             ConditionExpression="attribute_not_exists(job_id)",
         )
 
+    def test_create_app_job_stores_owner(self):
+        table = Mock()
+        job = job_store.create_job(
+            job_id="job-1",
+            s3_bucket="videos",
+            s3_key="uploads/job-1/input.mp4",
+            owner_sub="user-a",
+            table=table,
+        )
+        self.assertEqual(job["owner_sub"], "user-a")
+
     def test_get_pending_job_uses_consistent_read(self):
         item = {"job_id": "job-1", "status": "pending"}
         table = Mock()

@@ -109,6 +109,16 @@ originally tested locally; Phase 8 deploys an IAM-protected AWS Dev environment
 without changing Flutter or the legacy `/get_prediction` route. Phase 9 real
 AWS video, retry, DLQ, lease, warm-cache, and resource measurements are in
 [`docs/aws-phase9-validation.md`](../docs/aws-phase9-validation.md).
+Phase 10 retains those IAM routes and adds Cognito JWT `/app/jobs` routes with
+per-user job ownership. The mobile integration and Dev test gates are in
+[`docs/aws-phase10-cognito.md`](../docs/aws-phase10-cognito.md).
+
+The optional Dev media path persists the annotated result as private H.264
+MP4, compares pose variance with a versioned private NBA catalog, and signs
+short-lived GET URLs only for the owning App user. Its worker settings are
+`RESULT_VIDEO_ENABLED` and `NBA_REFERENCE_CATALOG_KEY`; raw private S3 keys
+are removed from the public job response. Catalog publishing is documented in
+the Phase 10 guide. The core `predict_video()` output format is unchanged.
 
 Required runtime settings are `AWS_REGION`, `UPLOAD_BUCKET`, `JOBS_TABLE`,
 `PROCESSING_LEASE_SECONDS`, and `MAX_PROCESSING_ATTEMPTS`.
@@ -160,12 +170,19 @@ OpenAI API usage is metered; there is no free API text model. The backend uses
 to anonymous aggregate angles, offsets, tracking quality, and known limitations.
 The LLM receives locally generated coaching labels and may only explain their
 named findings, correction goals, and drills; it is not allowed to invent a
-posture problem from raw statistics. User-facing coaching is English-only and
-contains `Main Findings` plus an action-focused `How to Improve` section. Internal
+posture problem from raw statistics. The legacy endpoint remains English; the
+Cognito App path requests English `Main Findings` and `How to Improve` sections asynchronously. Internal
 label codes and redundant generic classifier flags are removed before the request.
 Configure `OPENAI_REASONING_EFFORT` as needed. The full prompt and privacy
 contract are documented in
 [`docs/llm-coaching.md`](../docs/llm-coaching.md).
+
+For AWS Dev, set `COACHING_ENABLED=1` only after creating the Standard
+SecureString named by `OPENAI_API_KEY_PARAMETER`. The inference worker stores an
+anonymous aggregate in the completed job and queues a separate coaching task.
+The coaching worker has its own conditional lease, retries, and DLQ; failures
+show `coaching_status=unavailable` without changing the completed inference.
+The public job API omits the aggregate. See the Phase 10 guide for setup.
 
 ## Tests
 

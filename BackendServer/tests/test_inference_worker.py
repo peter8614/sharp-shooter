@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import io
+import re
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -64,6 +65,94 @@ def claimed_job(attempt_count: int = 1, token: str = "worker-1") -> dict:
 
 
 class InferenceWorkerTests(unittest.TestCase):
+    def test_coaching_queue_failure_does_not_fail_inference(self):
+        upload = inference_worker.parse_s3_event(s3_event())[0]
+        def fake_download(*, destination, **_kwargs):
+            Path(destination).write_bytes(b"input")
+        def fake_predict(_video, *, work_dir):
+            work_dir.mkdir()
+            landmarks = work_dir / "landmarks.csv"
+            landmarks.write_text("aggregate source", encoding="utf-8")
+            return {"success": True, "artifacts": {"landmarks": str(landmarks)}}
+        with (
+            patch.dict(os.environ, {
+                "COACHING_ENABLED": "1", "RESULT_VIDEO_ENABLED": "0",
+                "NBA_REFERENCE_CATALOG_KEY": "", "WORKER_DIAGNOSTICS_ENABLED": "0",
+            }),
+            patch.object(inference_worker.job_store, "get_job", return_value=pending_job()),
+            patch.object(inference_worker.job_store, "mark_job_processing", return_value=claimed_job()),
+            patch.object(inference_worker.job_store, "complete_job") as complete,
+            patch.object(inference_worker.s3_service, "download_video", side_effect=fake_download),
+            patch.object(inference_worker, "predict_video", side_effect=fake_predict),
+            patch.object(inference_worker, "build_landmark_summary", return_value={"schema_version": 1}),
+            patch.object(inference_worker.coaching_queue, "enqueue", side_effect=RuntimeError("SQS failed")),
+        ):
+            outcome = inference_worker.process_upload(upload, worker_token="worker-1")
+        self.assertEqual(outcome["outcome"], "completed")
+        saved = complete.call_args.args[1]
+        self.assertEqual(saved["coaching_status"], "unavailable")
+        self.assertEqual(saved["coaching_summary"], {"schema_version": 1})
+
+    def test_enhanced_worker_persists_video_and_reference_before_completion(self):
+        upload = inference_worker.parse_s3_event(s3_event())[0]
+        events = []
+
+        def fake_download(*, destination, **_kwargs):
+            Path(destination).write_bytes(b"input")
+
+        def fake_predict(_video, *, work_dir):
+            work_dir.mkdir()
+            landmarks = work_dir / "landmarks.csv"
+            annotated = work_dir / "annotated.avi"
+            landmarks.write_text("landmarks", encoding="utf-8")
+            annotated.write_bytes(b"avi")
+            return {
+                "success": True, "player_name": None, "similarity_percentage": None,
+                "artifacts": {"landmarks": str(landmarks), "annotated_video": str(annotated)},
+            }
+
+        def fake_convert(_source, output):
+            output.write_bytes(b"mp4")
+            return output
+
+        def fake_upload(**kwargs):
+            events.append("video_uploaded")
+            self.assertTrue(Path(kwargs["source"]).is_file())
+
+        def fake_complete(_job_id, result, *, worker_token):
+            events.append("completed")
+            self.assertEqual(worker_token, "worker-1")
+            self.assertNotIn("artifacts", result)
+            self.assertEqual(result["player_name"], "Example Player")
+            self.assertEqual(result["similarity_percentage"], 87.5)
+            self.assertEqual(result["player_video_key"], "references/videos/example-abc.mp4")
+            self.assertTrue(re.fullmatch(
+                r"results/test-job-id/[0-9a-f]{32}\.mp4", result["processed_video_key"]
+            ))
+
+        with (
+            patch.dict(os.environ, {
+                "RESULT_VIDEO_ENABLED": "1",
+                "NBA_REFERENCE_CATALOG_KEY": "references/catalog-" + "a" * 64 + ".json",
+                "WORKER_DIAGNOSTICS_ENABLED": "0",
+            }),
+            patch.object(inference_worker.job_store, "get_job", return_value=pending_job()),
+            patch.object(inference_worker.job_store, "mark_job_processing", return_value=claimed_job()),
+            patch.object(inference_worker.job_store, "complete_job", side_effect=fake_complete),
+            patch.object(inference_worker.s3_service, "download_video", side_effect=fake_download),
+            patch.object(inference_worker, "predict_video", side_effect=fake_predict),
+            patch.object(inference_worker.video_artifacts, "convert_annotated_video", side_effect=fake_convert),
+            patch.object(inference_worker.s3_service, "upload_processed_video", side_effect=fake_upload),
+            patch.object(inference_worker.reference_catalog, "load_catalog", return_value=("catalog",)),
+            patch.object(inference_worker.reference_catalog, "closest_reference", return_value=(
+                SimpleNamespace(player_name="Example Player", video_key="references/videos/example-abc.mp4"),
+                87.5,
+            )),
+        ):
+            outcome = inference_worker.process_upload(upload, worker_token="worker-1")
+        self.assertEqual(outcome["outcome"], "completed")
+        self.assertEqual(events, ["video_uploaded", "completed"])
+
     def test_worker_diagnostics_report_cache_and_tmp_without_changing_result(self):
         sampler = Mock(
             capacity_bytes=550461440,
