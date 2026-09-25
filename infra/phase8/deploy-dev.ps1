@@ -7,10 +7,20 @@ param(
     [int]$MonthlyBudgetUsd = 10,
     [int]$WorkerTimeoutSeconds = 300,
     [int]$WorkerMemoryMb = 3008,
+    [int]$WorkerEphemeralStorageMb = 2048,
+    [int]$ResultsRetentionDays = 7,
+    [ValidatePattern('^$|^references/catalog-[0-9a-f]{64}\.json$')][string]$ReferenceCatalogKey = '',
+    [ValidateSet('0', '1')][string]$ResultVideoEnabled = '0',
+    [ValidateSet('0', '1')][string]$CoachingEnabled = '0',
+    [string]$OpenAiApiKeyParameterName = '/sharp-shooter/dev/openai-api-key',
+    [int]$CoachingLeaseSeconds = 90,
+    [int]$MaxCoachingAttempts = 3,
+    [string]$OpenAiModel = 'gpt-5.4-nano',
     [int]$QueueVisibilitySeconds = 1800,
     [int]$ProcessingLeaseSeconds = 360,
     [int]$MaxProcessingAttempts = 3,
-    [ValidateSet('0', '1')][string]$WorkerDiagnosticsEnabled = '1'
+    [ValidateSet('0', '1')][string]$WorkerDiagnosticsEnabled = '1',
+    [ValidateSet('true', 'false')][string]$AllowCognitoSelfSignup = 'false'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,6 +34,13 @@ if ($ProcessingLeaseSeconds -le $WorkerTimeoutSeconds -or $ProcessingLeaseSecond
 }
 if ($MonthlyBudgetUsd -lt 1 -or $MaxProcessingAttempts -lt 1) {
     throw 'Budget and attempt limit must be positive.'
+}
+if ($CoachingLeaseSeconds -le 30 -or $CoachingLeaseSeconds -ge 180 -or $MaxCoachingAttempts -lt 1) {
+    throw 'Coaching lease must be between its Lambda timeout (30s) and SQS visibility (180s).'
+}
+if ($CoachingEnabled -eq '1') {
+    $parameterType = (aws ssm describe-parameters --region $Region --parameter-filters "Key=Name,Values=$OpenAiApiKeyParameterName" --query 'Parameters[0].Type' --output text).Trim()
+    if ($LASTEXITCODE -ne 0 -or $parameterType -ne 'SecureString') { throw 'Coaching requires an existing SecureString parameter; no key value is read by deployment.' }
 }
 
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
@@ -82,6 +99,10 @@ if ($ExistingInferenceImageUri) {
     $imageDigest = $ExistingInferenceImageUri.Split('@')[1]
     $verifiedDigest = (aws ecr describe-images --region $Region --repository-name 'sharp-shooter/inference-dev' --image-ids "imageDigest=$imageDigest" --query 'imageDetails[0].imageDigest' --output text).Trim()
     if ($LASTEXITCODE -ne 0 -or $verifiedDigest -ne $imageDigest) { throw 'Existing ECR image digest was not found.' }
+    $manifestType = (aws ecr describe-images --region $Region --repository-name 'sharp-shooter/inference-dev' --image-ids "imageDigest=$imageDigest" --query 'imageDetails[0].imageManifestMediaType' --output text).Trim()
+    if ($LASTEXITCODE -ne 0 -or $manifestType -notin @('application/vnd.oci.image.manifest.v1+json', 'application/vnd.docker.distribution.manifest.v2+json')) {
+        throw 'The ECR image is not a Lambda-compatible single-architecture manifest.'
+    }
     $imageUri = $ExistingInferenceImageUri
 } else {
     $registry = $repositoryUri.Split('/')[0]
@@ -95,6 +116,10 @@ if ($ExistingInferenceImageUri) {
     if ($LASTEXITCODE -ne 0) { throw 'Image push failed.' }
     $imageDigest = (aws ecr describe-images --region $Region --repository-name 'sharp-shooter/inference-dev' --image-ids "imageTag=$imageTag" --query 'imageDetails[0].imageDigest' --output text).Trim()
     if ($LASTEXITCODE -ne 0 -or $imageDigest -notmatch '^sha256:[0-9a-f]{64}$') { throw 'Could not verify the ECR image digest.' }
+    $manifestType = (aws ecr describe-images --region $Region --repository-name 'sharp-shooter/inference-dev' --image-ids "imageTag=$imageTag" --query 'imageDetails[0].imageManifestMediaType' --output text).Trim()
+    if ($LASTEXITCODE -ne 0 -or $manifestType -notin @('application/vnd.oci.image.manifest.v1+json', 'application/vnd.docker.distribution.manifest.v2+json')) {
+        throw 'The pushed image is not Lambda-compatible. Rebuild with --provenance=false --sbom=false.'
+    }
     $imageUri = "${repositoryUri}@${imageDigest}"
 }
 
@@ -134,8 +159,13 @@ aws cloudformation deploy --region $Region --stack-name $appStack `
     --capabilities CAPABILITY_NAMED_IAM `
     --parameter-overrides "InferenceImageUri=$imageUri" "ApiCodeBucket=$artifactBucket" "ApiCodeKey=$artifactKey" `
     "WorkerTimeoutSeconds=$WorkerTimeoutSeconds" "WorkerMemoryMb=$WorkerMemoryMb" `
+    "WorkerEphemeralStorageMb=$WorkerEphemeralStorageMb" "ResultsRetentionDays=$ResultsRetentionDays" `
+    "ReferenceCatalogKey=$ReferenceCatalogKey" "ResultVideoEnabled=$ResultVideoEnabled" `
+    "CoachingEnabled=$CoachingEnabled" "OpenAiApiKeyParameterName=$OpenAiApiKeyParameterName" `
+    "CoachingLeaseSeconds=$CoachingLeaseSeconds" "MaxCoachingAttempts=$MaxCoachingAttempts" "OpenAiModel=$OpenAiModel" `
     "QueueVisibilitySeconds=$QueueVisibilitySeconds" "ProcessingLeaseSeconds=$ProcessingLeaseSeconds" `
     "MaxProcessingAttempts=$MaxProcessingAttempts" "WorkerDiagnosticsEnabled=$WorkerDiagnosticsEnabled" `
+    "AllowCognitoSelfSignup=$AllowCognitoSelfSignup" `
     --tags Project=sharp-shooter Environment=dev `
     --no-fail-on-empty-changeset
 if ($LASTEXITCODE -ne 0) { throw 'Dev deployment failed; inspect CloudFormation events.' }

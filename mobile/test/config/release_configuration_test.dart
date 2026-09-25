@@ -38,4 +38,53 @@ void main() {
       );
     });
   });
+
+  group('Cognito App configuration', () {
+    test('allows the legacy-only fallback when no App values are set', () {
+      expect(
+          cognitoAppConfigurationError(
+            appApiUrl: '',
+            clientId: '',
+            issuer: '',
+          ),
+          isNull);
+    });
+
+    test('requires the App values together', () {
+      expect(
+          cognitoAppConfigurationError(
+            appApiUrl: 'https://api.example.com/app',
+            clientId: '',
+            issuer: 'https://cognito-idp.us-east-1.amazonaws.com/pool',
+          ),
+          isNotNull);
+    });
+
+    test('accepts a complete HTTPS App configuration', () {
+      expect(
+          cognitoAppConfigurationError(
+            appApiUrl: 'https://api.example.com/app',
+            clientId: 'public-client',
+            issuer: 'https://cognito-idp.us-east-1.amazonaws.com/pool',
+          ),
+          isNull);
+    });
+
+    test('rejects insecure API and issuer URLs', () {
+      expect(
+          cognitoAppConfigurationError(
+            appApiUrl: 'http://api.example.com/app',
+            clientId: 'public-client',
+            issuer: 'https://cognito-idp.us-east-1.amazonaws.com/pool',
+          ),
+          isNotNull);
+      expect(
+          cognitoAppConfigurationError(
+            appApiUrl: 'https://api.example.com/app',
+            clientId: 'public-client',
+            issuer: 'http://cognito-idp.us-east-1.amazonaws.com/pool',
+          ),
+          isNotNull);
+    });
+  });
 }

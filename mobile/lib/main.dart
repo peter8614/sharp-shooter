@@ -11,6 +11,14 @@ final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final configurationError = productionBackendUrlError(backendUrl);
+  final appConfigurationError = cognitoAppConfigurationError(
+    appApiUrl: appApiUrl,
+    clientId: cognitoClientId,
+    issuer: cognitoIssuer,
+  );
+  if (appConfigurationError != null) {
+    throw StateError('Invalid App configuration: $appConfigurationError');
+  }
   if (kReleaseMode && configurationError != null) {
     throw StateError('Invalid release configuration: $configurationError');
   }

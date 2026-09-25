@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_appauth/flutter_appauth.dart';
 
 import 'api/api_client.dart';
 import 'constants.dart';
@@ -41,68 +42,133 @@ class LoginPage extends StatelessWidget {
           ],
         ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(8.0),
-        children: <Widget>[
-          const SizedBox(height: 50),
-          Text(appName,
-              textAlign: TextAlign.center,
-              style:
-                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 30)),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: LoginForm(),
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: <Widget>[
-              const SizedBox(width: 30),
-              const Text('New here ? ',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
-              GestureDetector(
-                onTap: () {
-                  Navigator.push(context,
-                      MaterialPageRoute(builder: (context) => Signup()));
-                },
-                child: const Text('Get Registered Now!!',
-                    style: TextStyle(fontSize: 20, color: Colors.blue)),
-              )
-            ],
-          ),
-          const SizedBox(height: 16),
-          Center(
-            child: Wrap(
-              alignment: WrapAlignment.center,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const LegalDocumentPage(
-                        document: LegalDocument.privacyPolicy,
-                      ),
-                    ),
-                  ),
-                  child: const Text('Privacy Policy'),
+      body: useCognitoAppApi
+          ? const _CognitoLogin()
+          : ListView(
+              padding: const EdgeInsets.all(8.0),
+              children: <Widget>[
+                const SizedBox(height: 50),
+                Text(appName,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 30)),
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: LoginForm(),
                 ),
-                const Text('•'),
-                TextButton(
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const LegalDocumentPage(
-                        document: LegalDocument.termsOfService,
+                const SizedBox(height: 20),
+                Row(
+                  children: <Widget>[
+                    const SizedBox(width: 30),
+                    const Text('New here ? ',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 20)),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(context,
+                            MaterialPageRoute(builder: (context) => Signup()));
+                      },
+                      child: const Text('Get Registered Now!!',
+                          style: TextStyle(fontSize: 20, color: Colors.blue)),
+                    )
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Center(
+                  child: Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const LegalDocumentPage(
+                              document: LegalDocument.privacyPolicy,
+                            ),
+                          ),
+                        ),
+                        child: const Text('Privacy Policy'),
                       ),
-                    ),
+                      const Text('•'),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const LegalDocumentPage(
+                              document: LegalDocument.termsOfService,
+                            ),
+                          ),
+                        ),
+                        child: const Text('Terms of Service'),
+                      ),
+                    ],
                   ),
-                  child: const Text('Terms of Service'),
                 ),
               ],
             ),
-          ),
-        ],
-      ),
     );
   }
+}
+
+class _CognitoLogin extends StatefulWidget {
+  const _CognitoLogin();
+
+  @override
+  State<_CognitoLogin> createState() => _CognitoLoginState();
+}
+
+class _CognitoLoginState extends State<_CognitoLogin> {
+  bool _busy = false;
+
+  Future<void> _signIn() async {
+    setState(() => _busy = true);
+    try {
+      await cognitoAuth.signIn();
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const RouteVolunteerPage()),
+        (_) => false,
+      );
+    } on FlutterAppAuthUserCancelledException {
+      // Closing the browser is not a sign-in error.
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Sign in failed. Please try again.'),
+      ));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Sign in to analyze your shot.'),
+              const SizedBox(height: 20),
+              FilledButton(
+                onPressed: _busy ? null : _signIn,
+                child: _busy
+                    ? const CircularProgressIndicator()
+                    : const Text('Sign in securely'),
+              ),
+              const SizedBox(height: 12),
+              const Text('Dev access is currently invitation-only.'),
+              TextButton(
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => const LegalDocumentPage(
+                    document: LegalDocument.privacyPolicy,
+                  ),
+                )),
+                child: const Text('Privacy Policy'),
+              ),
+            ],
+          ),
+        ),
+      );
 }
 
 class LoginForm extends StatefulWidget {

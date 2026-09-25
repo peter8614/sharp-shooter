@@ -10,6 +10,8 @@ __pycache__
 output
 reports
 server_data
+.phase8-build
+.phase10-reference-build
 tests
 uploads
 NBA Data

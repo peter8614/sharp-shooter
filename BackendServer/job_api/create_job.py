@@ -8,7 +8,7 @@ import uuid
 from aws_backend import job_store, s3_service
 from aws_backend.config import SUPPORTED_VIDEO_TYPES, upload_bucket
 
-from .common import json_response, parse_json_body
+from .common import app_subject, json_response, parse_json_body
 
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,9 @@ class UnsupportedContentTypeError(ValueError):
     """Raised when an upload MIME type is outside the video allowlist."""
 
 
-def create_job(payload: dict, *, bucket: str | None = None) -> dict:
+def create_job(
+    payload: dict, *, bucket: str | None = None, owner_sub: str | None = None
+) -> dict:
     filename = payload.get("filename")
     if not isinstance(filename, str) or not filename.strip():
         raise ValueError("filename is required.")
@@ -41,11 +43,14 @@ def create_job(payload: dict, *, bucket: str | None = None) -> dict:
     )
     # Presigning is local. Generate first so a signing/configuration failure does
     # not leave behind a pending job that can never receive its upload.
-    job_store.create_job(
+    create_kwargs = dict(
         job_id=job_id,
         s3_bucket=resolved_bucket,
         s3_key=key,
     )
+    if owner_sub is not None:
+        create_kwargs["owner_sub"] = owner_sub
+    job_store.create_job(**create_kwargs)
     return {
         "job_id": job_id,
         "upload_url": upload_url,
@@ -55,8 +60,11 @@ def create_job(payload: dict, *, bucket: str | None = None) -> dict:
 
 def lambda_handler(event, _context):
     try:
+        owner_sub = app_subject(event or {}, "POST /app/jobs")
         payload = parse_json_body(event or {})
-        return json_response(201, create_job(payload))
+        return json_response(201, create_job(payload, owner_sub=owner_sub))
+    except PermissionError:
+        return json_response(401, {"error": "Unauthorized."})
     except UnsupportedContentTypeError:
         return json_response(415, {"error": "Unsupported video content type."})
     except (ValueError, UnicodeDecodeError):

@@ -32,6 +32,7 @@ RUN python -m pip install --no-cache-dir --no-compile --only-binary=:all: \
         mediapipe==0.10.21 ultralytics==8.4.154 ultralytics-thop==2.1.6 \
         ultralytics-platform==0.1.46 \
     && python -c "import cv2, mediapipe, sklearn, torch, ultralytics; assert mediapipe.solutions.pose; print('runtime imports verified')" \
+    && python -c "import imageio_ffmpeg, subprocess; p=subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), '-hide_banner', '-encoders'], capture_output=True, text=True, check=True); assert 'libx264' in p.stdout; print('H.264 encoder verified')" \
     && python -c "from pathlib import Path; import shutil; roots=(Path('${LAMBDA_TASK_ROOT}'), Path('/var/lang/lib/python3.12/site-packages')); paths=[p for root in roots for p in root.rglob('*') if p.is_dir() and p.name in ('tests', '__pycache__')]; [shutil.rmtree(p, ignore_errors=True) for p in paths]"
 
 COPY . ${LAMBDA_TASK_ROOT}/

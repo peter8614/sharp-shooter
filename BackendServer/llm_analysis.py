@@ -7,6 +7,7 @@ import io
 import json
 import math
 import os
+import re
 from typing import Any
 
 import numpy as np
@@ -29,6 +30,7 @@ LANDMARK_NAMES = (
 )
 ALLOWED_REASONING_EFFORTS = {"none", "low", "medium", "high", "xhigh"}
 REQUIRED_OUTPUT_HEADINGS = ("main findings", "how to improve")
+CHINESE_OUTPUT_HEADINGS = ("主要发现", "如何改进")
 FORBIDDEN_OUTPUT_PHRASES = (
     "data quality",
     "limits and safety",
@@ -185,6 +187,30 @@ def build_landmark_summary(content: str) -> dict[str, Any]:
 
 def build_coaching_instructions(output_language: str) -> str:
     """Return a concise prompt with explicit evidence and safety boundaries."""
+    if output_language == "Chinese":
+        headings = "主要发现\n如何改进"
+        response_guidance = (
+            "Explain at most two supported findings in plain Chinese. Make the "
+            "second section the majority of the response and give concrete "
+            "low-risk practice actions from the supplied labels only."
+        )
+        length_limit = "Keep the complete response under 300 Chinese characters."
+    else:
+        headings = "Main Findings\nHow to Improve"
+        response_guidance = (
+            "Explain at most two supported findings in plain language. "
+            "Do not show internal codes or generic classifier flags. Express lower-confidence "
+            "findings as possibilities rather than facts. If no specific finding is supported, "
+            "say so briefly. Do not quote the classifier's good/bad values or repeat its "
+            "labels verbatim. Convert 0-1 confidence values to rounded percentages and "
+            "call them model confidence, not shot success probability. "
+            "Avoid repetitive advice about repeating or preserving a pattern. "
+            "Make How to Improve the majority of the response. Give one clear, "
+            "practical action for each finding, using only its supplied coaching goal and "
+            "practice instruction. Do not turn a generic classifier result into a specific "
+            "body-mechanics claim."
+        )
+        length_limit = "keep the complete response under 180 words."
     return f"""Provide educational basketball shooting-form feedback from the
 supplied aggregate MediaPipe-landmark summary. Respond in {output_language}.
 
@@ -221,20 +247,16 @@ Before answering, silently audit the draft and rewrite any sentence that:
 - recommends narrowing, stabilizing, or standardizing a measured distribution; or
 - treats shoulder angles near -90 and +90 degrees as a large physical rotation.
 
-Output in English using exactly these two headings and no others:
-1. Main Findings — explain at most two supported findings in plain language. Do
-   not show internal codes or generic classifier flags. Express lower-confidence
-   findings as possibilities rather than facts. If no specific finding is
-   supported, say so briefly.
-2. How to Improve — make this the majority of the response. Give one clear,
-   practical action for each finding, using only its supplied coaching goal and
-   practice instruction. Do not turn a generic classifier result into a specific
-   body-mechanics claim.
+Output in {output_language} using exactly these two headings as standalone lines
+with no numbering, punctuation, explanation, or Markdown prefix:
+{headings}
+
+{response_guidance}
 
 Do not output sections titled Data Quality, What Looks Good, Limits and Safety,
 or any additional section. Apply evidence, privacy, limitation, and safety rules
 silently instead of listing them for the user. Use neutral, supportive language
-and keep the complete response under 180 words."""
+and {length_limit}"""
 
 
 def _prepare_model_assessment(context: dict[str, Any] | None) -> dict[str, Any]:
@@ -252,7 +274,10 @@ def _prepare_model_assessment(context: dict[str, Any] | None) -> dict[str, Any]:
         and "reference_low" in label["evidence"]
         and "reference_high" in label["evidence"]
     ]
-    selected_labels = specific_labels or labels
+    actionable_labels = [
+        label for label in labels if label.get("status") == "needs_attention"
+    ]
+    selected_labels = specific_labels or actionable_labels or labels
 
     public_labels: list[dict[str, Any]] = []
     for label in selected_labels[:2]:
@@ -269,21 +294,33 @@ def _prepare_model_assessment(context: dict[str, Any] | None) -> dict[str, Any]:
             )
             if key in label
         }
+        evidence = public_label.get("evidence")
+        if isinstance(evidence, dict) and set(evidence) == {"classification"}:
+            # The class value is already displayed by Flutter. Sending it to
+            # the LLM only encourages raw good/bad jargon in the prose.
+            public_label.pop("evidence")
         if public_label:
             public_labels.append(public_label)
 
     return {"coaching_labels": public_labels} if public_labels else {}
 
 
-def _validate_coaching_output(result: str) -> str:
+def _validate_coaching_output(result: str, output_language: str = "English") -> str:
     """Reject responses that expose internal codes or unwanted UI sections."""
     normalized = result.casefold()
-    if any(heading not in normalized for heading in REQUIRED_OUTPUT_HEADINGS):
+    headings = CHINESE_OUTPUT_HEADINGS if output_language == "Chinese" else REQUIRED_OUTPUT_HEADINGS
+    heading_lines = {
+        re.sub(r"^[\d.)#*\s]+", "", line).strip().casefold()
+        for line in result.splitlines()
+    }
+    if any(heading not in heading_lines for heading in headings):
         raise RuntimeError("The model response is missing a required coaching section")
     if any(phrase in normalized for phrase in FORBIDDEN_OUTPUT_PHRASES):
         raise RuntimeError("The model response contains a disabled coaching section")
     if any("_" in token for token in result.split()):
         raise RuntimeError("The model response contains an internal label code")
+    if len(result) > 2_000:
+        raise RuntimeError("The model response exceeds the coaching length limit")
     return result
 
 
@@ -295,10 +332,31 @@ def create_llm_analysis(
     coaching_context: dict[str, Any] | None = None,
 ) -> str:
     """Generate bounded coaching without sending raw frame-level landmarks."""
+    return create_llm_analysis_from_summary(
+        build_landmark_summary(content),
+        safety_identifier,
+        max_output_tokens=max_output_tokens,
+        client=client,
+        coaching_context=coaching_context,
+    )
+
+
+def create_llm_analysis_from_summary(
+    summary: dict[str, Any],
+    safety_identifier: str,
+    max_output_tokens: int = 700,
+    client: Any | None = None,
+    coaching_context: dict[str, Any] | None = None,
+    output_language: str = "English",
+) -> str:
+    """Generate coaching from a precomputed, anonymous aggregate only."""
     if not safety_identifier:
         raise ValueError("A privacy-preserving safety identifier is required")
-
-    summary = build_landmark_summary(content)
+    if output_language not in {"English", "Chinese"}:
+        raise ValueError("Unsupported coaching language")
+    if not isinstance(summary, dict) or summary.get("schema_version") != 1:
+        raise ValueError("Invalid coaching summary")
+    summary = dict(summary)
     model_assessment = _prepare_model_assessment(coaching_context)
     if model_assessment:
         # Only bounded server-generated labels are added; raw feature vectors and
@@ -329,7 +387,7 @@ def create_llm_analysis(
         reasoning={"effort": reasoning_effort},
         text={"verbosity": "low"},
         max_output_tokens=max_output_tokens,
-        instructions=build_coaching_instructions("English"),
+        instructions=build_coaching_instructions(output_language),
         input=json.dumps(summary, ensure_ascii=False, separators=(",", ":")),
         safety_identifier=safety_identifier,
         # Pose-derived summaries remain sensitive, so the response is not stored.
@@ -338,4 +396,4 @@ def create_llm_analysis(
     result = response.output_text.strip()
     if not result:
         raise RuntimeError("The model returned an empty analysis")
-    return _validate_coaching_output(result)
+    return _validate_coaching_output(result, output_language)

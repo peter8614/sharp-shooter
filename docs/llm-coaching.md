@@ -54,7 +54,7 @@ The model must self-check for these failure modes before returning its answer,
 and it should prefer guidance for capturing better continuous evidence when the
 available aggregates cannot support a correction.
 
-The user-facing response is always in English and has exactly two sections:
+The legacy endpoint responds in English with exactly two sections:
 
 1. Main Findings
 2. How to Improve
@@ -67,6 +67,14 @@ user-facing sections. The model may explain no more than two findings and their
 associated low-risk drills, must cite label evidence, and must stay under 180
 words. If fewer than five usable frames remain after local validation, it must
 request a better recording instead of providing technique conclusions.
+
+The Cognito App uses the same evidence contract but requests concise English
+`Main Findings` and `How to Improve` sections in a separate SQS-driven Lambda invocation.
+Inference is already `completed` when this optional coaching finishes; a
+coaching failure never changes the video or classifier result. The OpenAI key
+is loaded from a narrowly scoped AWS Systems Manager SecureString by that
+worker only. The private aggregate stays in DynamoDB and is stripped from the
+public job response. See `docs/aws-phase10-cognito.md` for Dev setup.
 
 ## Configuration
 

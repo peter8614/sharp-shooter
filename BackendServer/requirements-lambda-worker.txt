@@ -9,10 +9,12 @@ filelock>=3.16.1,<4
 flatbuffers>=2,<26
 GitPython>=3.1.30,<4
 httpx>=0.28,<1
+imageio-ffmpeg==0.6.0
 joblib>=1.4,<2
 matplotlib>=3.9,<4
 nvidia-ml-py>=12,<14
 numpy>=1.26,<2
+openai>=1.109,<3
 opencv-python-headless==4.11.0.86
 pandas>=2.2,<3
 Pillow>=11,<12
