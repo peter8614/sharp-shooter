@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-10-04 — Sharp Shooter branding
+
+- Replaced in-App logos and all iOS/Android launcher icon sizes with the
+  supplied basketball artwork, including an opaque 1024px iOS marketing icon.
+- Changed the installed iOS/Android name and Flutter title to `Sharp Shooter`;
+  application identifiers and authentication callback schemes are unchanged.
+- Created an App Store Connect `1.1.0` draft and saved the English Subtitle
+  `AI Basketball Shot Analysis`. Apple rejected the store Name `Sharp Shooter`
+  as already taken; kept `SharpShooter - Mobile` in that record. The draft was
+  not submitted for review. Checked in the matching metadata and release notes.
+- Flutter tests passed (27); rebuilt the Android Dev APK and verified its
+  installed label is `Sharp Shooter`. iOS icon dimensions and opaque RGB format
+  were verified; signing/upload still requires the Mac and the store Bundle ID.
+
 ## 2026-09-24 — Dev result clarity and playback-link fix
 
 - App results now state the model's Good/Bad judgment explicitly for shooting
