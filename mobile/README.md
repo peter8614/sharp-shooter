@@ -15,6 +15,30 @@ Firebase credentials are handled by the backend. Do not place service-account
 keys, API secrets, signing keys, personal videos, or generated pose data in this
 directory.
 
+## App branding
+
+The installed App name is **Sharp Shooter** on iOS and Android. The supplied
+artwork is stored in `assets/app_logo_source.png`; all in-App logos and native
+launcher icons use it. On Windows, regenerate the icon sizes from `mobile/`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tool/update_branding_assets.ps1
+```
+
+App Store English metadata is in `fastlane/metadata/en-US/`. On 2026-10-04,
+the Subtitle `AI Basketball Shot Analysis` was saved in the new `1.1.0` draft
+for Apple ID `6741083639`. Apple rejected the requested store Name
+`Sharp Shooter` as already taken, so the store Name remains
+`SharpShooter - Mobile`; the installed App name is still `Sharp Shooter`.
+The draft has not been submitted for review. These local metadata files do
+not change App Store Connect automatically.
+
+The new App icon is included in the next signed iOS build; create that build
+on the Mac. Before uploading to the existing store record, align its required
+Bundle ID `com.codingminds.sharpShooter` with the Xcode project, which currently
+uses `com.codingminds.shotRater`. This branding change preserves the existing
+project identifiers and OAuth callback scheme.
+
 ## Cognito Dev App API (Phase 10)
 
 The new Dev path uses Cognito browser login with PKCE, a JWT-authenticated
